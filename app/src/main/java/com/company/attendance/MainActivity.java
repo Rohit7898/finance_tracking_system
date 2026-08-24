@@ -947,12 +947,36 @@ public class MainActivity extends Activity {
         name.setTextColor(Color.rgb(47, 111, 115));
         details.addView(name);
         details.addView(profileRow("Nickname", selectedStaff.nickname));
-        details.addView(profileRow("Date of birth", selectedStaff.dateOfBirth.toString()));
+        details.addView(profileDateOfBirthRow());
         details.addView(profileRow("Phone", selectedStaff.phone));
         details.addView(profileRow("Joining date", selectedStaff.dateOfJoining.toString()));
         details.addView(profileRow("Emergency", selectedStaff.emergencyContact));
         card.addView(details, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         return card;
+    }
+
+    private LinearLayout profileDateOfBirthRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(9), 0, 0);
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView labelView = text("Date of birth", 12, true);
+        labelView.setTextColor(Color.rgb(94, 110, 126));
+        TextView valueView = text(selectedStaff.dateOfBirth.toString(), 15, false);
+        valueView.setTextColor(Color.rgb(39, 51, 64));
+        textBlock.addView(labelView);
+        textBlock.addView(valueView);
+        row.addView(textBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        Button edit = primaryButton("Edit", Color.rgb(47, 111, 115));
+        edit.setTextSize(12);
+        edit.setPadding(dp(8), 0, dp(8), 0);
+        edit.setOnClickListener(v -> showBirthDatePicker());
+        row.addView(edit, new LinearLayout.LayoutParams(dp(76), dp(42)));
+        return row;
     }
 
     private LinearLayout profileRow(String label, String value) {
@@ -1202,6 +1226,26 @@ public class MainActivity extends Activity {
         picker.init(today.getYear(), today.getMonthValue() - 1, today.getDayOfMonth(), (view, year, monthOfYear, dayOfMonth) -> {
             target.setText(LocalDate.of(year, monthOfYear + 1, dayOfMonth).toString());
             dialog[0].dismiss();
+        });
+        dialog[0].show();
+    }
+
+    private void showBirthDatePicker() {
+        LocalDate current = selectedStaff.dateOfBirth == null ? LocalDate.of(1995, 1, 1) : selectedStaff.dateOfBirth;
+        DatePicker picker = new DatePicker(this);
+        picker.setMaxDate(LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+        final AlertDialog[] dialog = new AlertDialog[1];
+        dialog[0] = new AlertDialog.Builder(this)
+                .setTitle("Date of birth")
+                .setView(picker)
+                .create();
+        picker.init(current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth(), (view, year, monthOfYear, dayOfMonth) -> {
+            LocalDate updated = LocalDate.of(year, monthOfYear + 1, dayOfMonth);
+            selectedStaff.dateOfBirth = updated;
+            postBackend("/api/staff", "{\"staffId\":\"" + selectedStaff.id + "\",\"dob\":\"" + updated + "\"}");
+            toast("Date of birth updated");
+            dialog[0].dismiss();
+            render();
         });
         dialog[0].show();
     }
@@ -1456,6 +1500,7 @@ public class MainActivity extends Activity {
                     if (staff.id.equals(loggedStaffId) && !loggedPhone.isEmpty()) {
                         phone = loggedPhone;
                     }
+                    String dob = object.optString("dob", "");
                     double advance = object.optDouble("advance", staff.advanceBalance);
                     double paid = object.optDouble("paid", staff.lastSalaryAmount);
                     double dailyWage = object.optDouble("dailyWage", staff.dailyWage);
@@ -1478,6 +1523,13 @@ public class MainActivity extends Activity {
                     if (phone != null && !phone.equals(staff.phone)) {
                         staff.phone = phone;
                         changed = true;
+                    }
+                    if (!dob.isEmpty()) {
+                        LocalDate dateOfBirth = LocalDate.parse(dob);
+                        if (staff.dateOfBirth == null || !staff.dateOfBirth.equals(dateOfBirth)) {
+                            staff.dateOfBirth = dateOfBirth;
+                            changed = true;
+                        }
                     }
                     if (Math.abs(staff.dailyWage - dailyWage) > 0.01) {
                         staff.dailyWage = dailyWage;
