@@ -38,6 +38,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -79,6 +80,7 @@ public class MainActivity extends Activity {
     private boolean pendingShopLocationSetup;
     private boolean syncInProgress;
     private boolean autoAttendanceInProgress;
+    private boolean pendingFlushInProgress;
     private final Handler syncHandler = new Handler(Looper.getMainLooper());
     private final Runnable autoSyncRunnable = new Runnable() {
         @Override
@@ -1446,24 +1448,77 @@ public class MainActivity extends Activity {
     private void postBackend(String path, String json) {
         new Thread(() -> {
             try {
-                HttpURLConnection connection = (HttpURLConnection) new URL(BACKEND_URL + path).openConnection();
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setConnectTimeout(4000);
-                connection.setReadTimeout(4000);
-                connection.setDoOutput(true);
-                try (OutputStream output = connection.getOutputStream()) {
-                    output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                }
-                int code = connection.getResponseCode();
-                InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                if (stream != null) stream.close();
-                connection.disconnect();
+                sendBackendPost(path, json);
                 runOnUiThread(this::syncFromBackend);
             } catch (Exception ignored) {
-                runOnUiThread(() -> toast("Saved locally. Backend not reachable."));
+                queuePendingPost(path, json);
+                runOnUiThread(() -> toast("Saved locally. Will sync when backend is reachable."));
             }
         }).start();
+    }
+
+    private void sendBackendPost(String path, String json) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(BACKEND_URL + path).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setConnectTimeout(4000);
+        connection.setReadTimeout(4000);
+        connection.setDoOutput(true);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        int code = connection.getResponseCode();
+        InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        if (stream != null) stream.close();
+        connection.disconnect();
+        if (code >= 400) throw new IOException("Backend rejected " + path + " with " + code);
+    }
+
+    private void queuePendingPost(String path, String json) {
+        try {
+            JSONArray queue = pendingPostQueue();
+            for (int i = 0; i < queue.length(); i++) {
+                JSONObject item = queue.getJSONObject(i);
+                if (path.equals(item.optString("path")) && json.equals(item.optString("body"))) return;
+            }
+            JSONObject item = new JSONObject();
+            item.put("path", path);
+            item.put("body", json);
+            queue.put(item);
+            prefs.edit().putString("pendingBackendPosts", queue.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private JSONArray pendingPostQueue() {
+        try {
+            return new JSONArray(prefs.getString("pendingBackendPosts", "[]"));
+        } catch (Exception exception) {
+            return new JSONArray();
+        }
+    }
+
+    private void flushPendingPostsBlocking() {
+        if (pendingFlushInProgress) return;
+        pendingFlushInProgress = true;
+        try {
+            JSONArray queue = pendingPostQueue();
+            if (queue.length() == 0) return;
+            JSONArray remaining = new JSONArray();
+            for (int i = 0; i < queue.length(); i++) {
+                JSONObject item = queue.getJSONObject(i);
+                try {
+                    sendBackendPost(item.optString("path"), item.optString("body"));
+                } catch (Exception exception) {
+                    for (int j = i; j < queue.length(); j++) remaining.put(queue.getJSONObject(j));
+                    break;
+                }
+            }
+            prefs.edit().putString("pendingBackendPosts", remaining.toString()).apply();
+        } catch (Exception ignored) {
+        } finally {
+            pendingFlushInProgress = false;
+        }
     }
 
     private void startAutoSync() {
@@ -1481,6 +1536,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             boolean changed = false;
             try {
+                flushPendingPostsBlocking();
                 HttpURLConnection connection = (HttpURLConnection) new URL(BACKEND_URL + "/api/state").openConnection();
                 connection.setRequestMethod("GET");
                 String response;
