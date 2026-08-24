@@ -308,6 +308,10 @@ public class MainActivity extends Activity {
             selectedStaff = new Staff(staffId.isEmpty() ? "OP003" : staffId, prefs.getString("loggedName", "Staff"), 0);
             staffById.put(selectedStaff.id, selectedStaff);
         }
+        String loggedPhone = prefs.getString("loggedPhone", "");
+        if (!loggedPhone.isEmpty() && selectedStaff.id.equals(staffId)) {
+            selectedStaff.phone = loggedPhone;
+        }
         render();
         uploadLocalPhotoIfAny();
         startAutoSync();
@@ -1446,6 +1450,12 @@ public class MainActivity extends Activity {
                     JSONObject object = staffList.getJSONObject(i);
                     Staff staff = staffById.get(object.optString("id"));
                     if (staff == null) continue;
+                    String phone = object.optString("phone", staff.phone);
+                    String loggedStaffId = prefs.getString("loggedStaffId", "");
+                    String loggedPhone = prefs.getString("loggedPhone", "");
+                    if (staff.id.equals(loggedStaffId) && !loggedPhone.isEmpty()) {
+                        phone = loggedPhone;
+                    }
                     double advance = object.optDouble("advance", staff.advanceBalance);
                     double paid = object.optDouble("paid", staff.lastSalaryAmount);
                     double dailyWage = object.optDouble("dailyWage", staff.dailyWage);
@@ -1463,6 +1473,10 @@ public class MainActivity extends Activity {
                     }
                     if (Math.abs(staff.serverRemaining - remaining) > 0.01) {
                         staff.serverRemaining = remaining;
+                        changed = true;
+                    }
+                    if (phone != null && !phone.equals(staff.phone)) {
+                        staff.phone = phone;
                         changed = true;
                     }
                     if (Math.abs(staff.dailyWage - dailyWage) > 0.01) {
