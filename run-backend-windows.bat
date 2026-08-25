@@ -155,6 +155,7 @@ exit /b 0
 
 :download_portable_java
 set "JAVA_ZIP=%TEMP%\portable-java8-32bit.zip"
+set "LOCAL_JAVA_ZIP=%ROOT%portable-java8-32bit.zip"
 set "JAVA_URL=https://api.adoptopenjdk.net/v3/binary/latest/8/ga/windows/x32/jdk/openj9/normal/adoptopenjdk"
 where powershell >nul 2>nul
 if errorlevel 1 (
@@ -164,15 +165,26 @@ if errorlevel 1 (
     exit /b 1
 )
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
+if exist "%LOCAL_JAVA_ZIP%" (
+    echo Found local Java ZIP:
+    echo %LOCAL_JAVA_ZIP%
+    set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
+    goto extract_portable_java
+)
 echo Downloading portable Java 8 32-bit ZIP...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}; (New-Object Net.WebClient).DownloadFile('%JAVA_URL%', '%JAVA_ZIP%')"
 if errorlevel 1 (
     echo.
     echo Could not download portable Java.
+    echo On another computer, download the Java ZIP and copy it here:
+    echo %LOCAL_JAVA_ZIP%
+    echo Then run this batch file again.
+    echo.
     echo Manual fallback: download Java 8 32-bit JDK ZIP and extract it to:
     echo %PORTABLE_JDK%
     exit /b 1
 )
+:extract_portable_java
 echo Extracting portable JDK...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp -Directory | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
 if errorlevel 1 (
