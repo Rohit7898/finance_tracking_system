@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
     private static final int PHOTO_REQUEST = 12;
     private static final int CAMERA_REQUEST = 13;
     private static final int PHONE_REQUEST = 14;
-    private static final String BACKEND_URL = "http://192.168.29.12:8080";
+    private static final String BACKEND_URL = "http://192.168.29.23:8080";
     private static final LocalTime CUT_OFF = LocalTime.of(10, 30);
     private static final double SHOP_RADIUS_METERS = 100.0;
     private static final double DEFAULT_SHOP_LAT = 23.2599;
