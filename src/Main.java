@@ -1,6 +1,7 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -9,6 +10,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.Date;
@@ -31,7 +33,7 @@ import java.util.stream.Collectors;
 public class Main {
     private static final int PORT = envPort();
     private static final double DEFAULT_DAILY_WAGE = 650;
-    private static final Path DB_FILE = Path.of("data", "company-attendance.db");
+    private static final Path DB_FILE = Paths.get("data", "company-attendance.db");
     private static final String DATABASE_URL = System.getenv("DATABASE_URL");
     private final Map<String, Staff> staff = new LinkedHashMap<>();
     private final TreeSet<String> publicHolidays = new TreeSet<>();
@@ -97,7 +99,8 @@ public class Main {
             try (ObjectInputStream input = new ObjectInputStream(Files.newInputStream(DB_FILE))) {
                 staff.clear();
                 Object loaded = input.readObject();
-                if (loaded instanceof AppData data) {
+                if (loaded instanceof AppData) {
+                    AppData data = (AppData) loaded;
                     staff.putAll(data.staff);
                     publicHolidays.clear();
                     publicHolidays.addAll(data.publicHolidays);
@@ -234,7 +237,7 @@ public class Main {
     }
 
     private boolean usingPostgres() {
-        return DATABASE_URL != null && !DATABASE_URL.isBlank();
+        return !isBlank(DATABASE_URL);
     }
 
     private Connection db() throws Exception {
@@ -244,7 +247,7 @@ public class Main {
         if (url.startsWith("postgres://") || url.startsWith("postgresql://")) {
             url = "jdbc:" + url;
         }
-        if (user != null && !user.isBlank()) {
+        if (!isBlank(user)) {
             return DriverManager.getConnection(url, user, password == null ? "" : password);
         }
         return DriverManager.getConnection(url);
@@ -252,77 +255,65 @@ public class Main {
 
     private void initPostgres() throws Exception {
         try (Connection connection = db(); Statement statement = connection.createStatement()) {
-            statement.execute("""
-                    create table if not exists staff (
-                        id text primary key,
-                        role text not null default 'employee',
-                        full_name text not null,
-                        nickname text,
-                        phone text,
-                        dob date,
-                        joining_date date,
-                        emergency_contact text,
-                        login_aliases text,
-                        daily_wage numeric(10,2) not null default 0,
-                        advance_balance numeric(10,2) not null default 0,
-                        last_salary_amount numeric(10,2) not null default 0,
-                        last_salary_date date,
-                        last_repayment_date date,
-                        photo_base64 text
-                    )
-                    """);
+            statement.execute("create table if not exists staff ("
+                    + "id text primary key,"
+                    + "role text not null default 'employee',"
+                    + "full_name text not null,"
+                    + "nickname text,"
+                    + "phone text,"
+                    + "dob date,"
+                    + "joining_date date,"
+                    + "emergency_contact text,"
+                    + "login_aliases text,"
+                    + "daily_wage numeric(10,2) not null default 0,"
+                    + "advance_balance numeric(10,2) not null default 0,"
+                    + "last_salary_amount numeric(10,2) not null default 0,"
+                    + "last_salary_date date,"
+                    + "last_repayment_date date,"
+                    + "photo_base64 text"
+                    + ")");
             try {
                 statement.execute("alter table staff add column if not exists login_aliases text");
             } catch (Exception ignored) {
             }
-            statement.execute("""
-                    create table if not exists attendance (
-                        staff_id text not null references staff(id) on delete cascade,
-                        attendance_date date not null,
-                        status text not null,
-                        day_value numeric(4,2) not null,
-                        earned_wage numeric(10,2) not null,
-                        source text not null default 'employee',
-                        primary key (staff_id, attendance_date)
-                    )
-                    """);
-            statement.execute("""
-                    create table if not exists leaves (
-                        id bigserial primary key,
-                        staff_id text not null references staff(id) on delete cascade,
-                        from_date date not null,
-                        to_date date not null,
-                        reason text,
-                        status text not null default 'Pending',
-                        decided_by text,
-                        decided_at timestamptz
-                    )
-                    """);
-            statement.execute("""
-                    create table if not exists salary_payments (
-                        id bigserial primary key,
-                        staff_id text not null references staff(id) on delete cascade,
-                        paid_date date not null,
-                        amount numeric(10,2) not null,
-                        month_key text
-                    )
-                    """);
-            statement.execute("""
-                    create table if not exists advance_transactions (
-                        id bigserial primary key,
-                        staff_id text not null references staff(id) on delete cascade,
-                        transaction_date date not null,
-                        type text not null,
-                        amount numeric(10,2) not null,
-                        balance_after numeric(10,2) not null
-                    )
-                    """);
-            statement.execute("""
-                    create table if not exists public_holidays (
-                        holiday_date date primary key,
-                        title text not null default 'Public holiday'
-                    )
-                    """);
+            statement.execute("create table if not exists attendance ("
+                    + "staff_id text not null references staff(id) on delete cascade,"
+                    + "attendance_date date not null,"
+                    + "status text not null,"
+                    + "day_value numeric(4,2) not null,"
+                    + "earned_wage numeric(10,2) not null,"
+                    + "source text not null default 'employee',"
+                    + "primary key (staff_id, attendance_date)"
+                    + ")");
+            statement.execute("create table if not exists leaves ("
+                    + "id bigserial primary key,"
+                    + "staff_id text not null references staff(id) on delete cascade,"
+                    + "from_date date not null,"
+                    + "to_date date not null,"
+                    + "reason text,"
+                    + "status text not null default 'Pending',"
+                    + "decided_by text,"
+                    + "decided_at timestamptz"
+                    + ")");
+            statement.execute("create table if not exists salary_payments ("
+                    + "id bigserial primary key,"
+                    + "staff_id text not null references staff(id) on delete cascade,"
+                    + "paid_date date not null,"
+                    + "amount numeric(10,2) not null,"
+                    + "month_key text"
+                    + ")");
+            statement.execute("create table if not exists advance_transactions ("
+                    + "id bigserial primary key,"
+                    + "staff_id text not null references staff(id) on delete cascade,"
+                    + "transaction_date date not null,"
+                    + "type text not null,"
+                    + "amount numeric(10,2) not null,"
+                    + "balance_after numeric(10,2) not null"
+                    + ")");
+            statement.execute("create table if not exists public_holidays ("
+                    + "holiday_date date primary key,"
+                    + "title text not null default 'Public holiday'"
+                    + ")");
         }
     }
 
@@ -401,25 +392,19 @@ public class Main {
                 statement.executeUpdate("delete from staff");
                 statement.executeUpdate("delete from public_holidays");
             }
-            try (PreparedStatement employees = connection.prepareStatement("""
-                    insert into staff (id,role,full_name,nickname,phone,dob,joining_date,emergency_contact,login_aliases,daily_wage,advance_balance,last_salary_amount,last_salary_date,last_repayment_date,photo_base64)
-                    values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """);
-                 PreparedStatement attendance = connection.prepareStatement("""
-                    insert into attendance (staff_id,attendance_date,status,day_value,earned_wage) values (?,?,?,?,?)
-                    """);
-                 PreparedStatement leaves = connection.prepareStatement("""
-                    insert into leaves (staff_id,from_date,to_date,reason,status) values (?,?,?,?,?)
-                    """);
-                 PreparedStatement salary = connection.prepareStatement("""
-                    insert into salary_payments (staff_id,paid_date,amount,month_key) values (?,?,?,?)
-                    """);
-                 PreparedStatement advance = connection.prepareStatement("""
-                    insert into advance_transactions (staff_id,transaction_date,type,amount,balance_after) values (?,?,?,?,?)
-                    """);
-                 PreparedStatement holidays = connection.prepareStatement("""
-                    insert into public_holidays (holiday_date,title) values (?,'Public holiday')
-                    """)) {
+            try (PreparedStatement employees = connection.prepareStatement(
+                    "insert into staff (id,role,full_name,nickname,phone,dob,joining_date,emergency_contact,login_aliases,daily_wage,advance_balance,last_salary_amount,last_salary_date,last_repayment_date,photo_base64) "
+                            + "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                 PreparedStatement attendance = connection.prepareStatement(
+                    "insert into attendance (staff_id,attendance_date,status,day_value,earned_wage) values (?,?,?,?,?)");
+                 PreparedStatement leaves = connection.prepareStatement(
+                    "insert into leaves (staff_id,from_date,to_date,reason,status) values (?,?,?,?,?)");
+                 PreparedStatement salary = connection.prepareStatement(
+                    "insert into salary_payments (staff_id,paid_date,amount,month_key) values (?,?,?,?)");
+                 PreparedStatement advance = connection.prepareStatement(
+                    "insert into advance_transactions (staff_id,transaction_date,type,amount,balance_after) values (?,?,?,?,?)");
+                 PreparedStatement holidays = connection.prepareStatement(
+                    "insert into public_holidays (holiday_date,title) values (?,'Public holiday')")) {
                 for (Staff employee : staff.values()) {
                     employees.setString(1, employee.id);
                     employees.setString(2, employee.role);
@@ -457,7 +442,7 @@ public class Main {
                         salary.setString(1, employee.id);
                         setDate(salary, 2, payment.date);
                         salary.setDouble(3, payment.amount);
-                        salary.setString(4, payment.date == null || payment.date.isBlank() ? "" : YearMonth.from(LocalDate.parse(payment.date)).toString());
+                        salary.setString(4, isBlank(payment.date) ? "" : YearMonth.from(LocalDate.parse(payment.date)).toString());
                         salary.executeUpdate();
                     }
                     for (AdvanceTransaction transaction : employee.advanceTransactions) {
@@ -545,7 +530,7 @@ public class Main {
             return;
         }
         String status = body.getOrDefault("status", "");
-        if (status.isBlank()) status = LocalTime.now().isAfter(LocalTime.of(10, 30)) ? "Half day" : "Full day";
+        if (isBlank(status)) status = LocalTime.now().isAfter(LocalTime.of(10, 30)) ? "Half day" : "Full day";
         double dayValue = parseDouble(body.getOrDefault("dayValue", status.equals("Full day") ? "1.0" : status.equals("Half day") ? "0.5" : "0"));
         Attendance previous = employee.attendance.get(todayDate.toString());
         employee.attendance.put(todayDate.toString(), new Attendance(status, dayValue, employee.dailyWage));
@@ -656,11 +641,11 @@ public class Main {
     private void staffUpdate(HttpExchange exchange) throws IOException {
         Map<String, String> body = body(exchange);
         String id = body.getOrDefault("staffId", "").trim();
-        if (id.isBlank()) id = nextEmployeeId();
+        if (isBlank(id)) id = nextEmployeeId();
         Staff employee = staff.get(id);
         if (employee == null) {
             String name = body.getOrDefault("name", "").trim();
-            if (name.isBlank()) {
+            if (isBlank(name)) {
                 sendJson(exchange, "{\"ok\":false,\"message\":\"Name required\"}");
                 return;
             }
@@ -671,7 +656,7 @@ public class Main {
             staff.put(employee.id, employee);
         } else {
             String name = body.getOrDefault("name", "").trim();
-            if (!name.isBlank()) {
+            if (!isBlank(name)) {
                 employee.name = name;
                 employee.nickname = firstName(name);
             }
@@ -808,10 +793,10 @@ public class Main {
         TreeSet<YearMonth> months = new TreeSet<>(Comparator.reverseOrder());
         employee.attendance.keySet().forEach(date -> months.add(YearMonth.from(LocalDate.parse(date))));
         employee.leaves.forEach(leave -> {
-            if (!leave.from.isBlank()) months.add(YearMonth.from(LocalDate.parse(leave.from)));
+            if (!isBlank(leave.from)) months.add(YearMonth.from(LocalDate.parse(leave.from)));
         });
         employee.salaryPayments.forEach(payment -> {
-            if (!payment.date.isBlank()) months.add(YearMonth.from(LocalDate.parse(payment.date)));
+            if (!isBlank(payment.date)) months.add(YearMonth.from(LocalDate.parse(payment.date)));
         });
         months.add(YearMonth.now());
 
@@ -823,11 +808,11 @@ public class Main {
                     .mapToDouble(entry -> entry.getValue().dayValue)
                     .sum();
             long leavesApplied = employee.leaves.stream()
-                    .filter(leave -> !leave.from.isBlank() && YearMonth.from(LocalDate.parse(leave.from)).equals(month))
+                    .filter(leave -> !isBlank(leave.from) && YearMonth.from(LocalDate.parse(leave.from)).equals(month))
                     .count();
             long approvedLeaveDays = approvedLeaveDatesInMonth(employee, month);
             double paid = employee.salaryPayments.stream()
-                    .filter(payment -> !payment.date.isBlank() && YearMonth.from(LocalDate.parse(payment.date)).equals(month))
+                    .filter(payment -> !isBlank(payment.date) && YearMonth.from(LocalDate.parse(payment.date)).equals(month))
                     .mapToDouble(payment -> payment.amount)
                     .sum();
             double earned = summaryMonth ? days * employee.dailyWage : employee.attendance.entrySet().stream()
@@ -943,7 +928,7 @@ public class Main {
 
     private double salaryPaidInMonth(Staff employee, YearMonth month) {
         return employee.salaryPayments.stream()
-                .filter(payment -> !payment.date.isBlank() && YearMonth.from(LocalDate.parse(payment.date)).equals(month))
+                .filter(payment -> !isBlank(payment.date) && YearMonth.from(LocalDate.parse(payment.date)).equals(month))
                 .mapToDouble(payment -> payment.amount)
                 .sum();
     }
@@ -1043,54 +1028,19 @@ public class Main {
     }
 
     private String html() {
-        return """
-                <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-                <title>Admin</title><style>
-                body{margin:0;background:#f4f6f8;font-family:Arial;color:#17212b}.top{position:sticky;top:0;background:white;padding:12px 16px;border-bottom:1px solid #dde5ec;z-index:2}
-                h1{font-size:20px;margin:0}.wrap{max-width:980px;margin:auto;padding:10px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}.staffgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-                .card{background:white;border-radius:9px;padding:12px;margin:10px 0;box-shadow:0 1px 8px #00000012}.metric{padding:10px;margin:0}.green{background:#e8f6f2}.red{background:#ffebeb}.blue{background:#e8f1f9}.purple{background:#f6eefa}
-                b{font-size:18px}small{color:#607080}.profile{display:flex;gap:10px;align-items:center}.profile h2{font-size:18px;margin:0 0 3px}
-                .avatar{width:50px;height:50px;border-radius:50%;object-fit:cover;background:#2f6f73;color:white;display:grid;place-items:center;font-weight:800;font-size:16px}
-                .tile{margin:0;cursor:pointer;transition:.15s transform,.15s box-shadow}.tile:hover{transform:translateY(-1px);box-shadow:0 5px 18px #00000018}.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;background:#e8f1f9;color:#1f5d8f}.badge.warn{background:#fff4de;color:#8a4b12}.badge.bad{background:#ffebeb;color:#9a2b2b}.summary{position:sticky;top:53px;z-index:1;background:#f4f6f8;padding-bottom:4px}
-                .tools{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}.tool{display:grid;grid-template-columns:1.1fr 1fr auto;gap:6px;background:#f8fafc;border:1px solid #d9e2ec;border-radius:9px;padding:6px}.atttool{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:6px;background:#f8fafc;border:1px solid #d9e2ec;border-radius:9px;padding:6px}
-                .holidaybar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{background:#fff4de;color:#8a4b12;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:700}
-                .addbar{display:flex;justify-content:flex-end;margin:10px 0}.plus{width:46px;height:46px;border-radius:50%;font-size:28px;line-height:1;padding:0;background:#126d5c;box-shadow:0 6px 16px #126d5c33}
-                .modal{position:fixed;inset:0;background:#0b1724aa;display:none;align-items:center;justify-content:center;padding:14px;z-index:5}.modal.open{display:flex}.modalbox{background:#f4f6f8;border-radius:14px;width:min(760px,100%);max-height:92vh;overflow:auto;box-shadow:0 18px 50px #00000035}.modalhead{position:sticky;top:0;background:white;padding:14px 16px;border-bottom:1px solid #dde5ec;display:flex;align-items:center;justify-content:space-between;z-index:1}.modalhead h2{margin:0;font-size:20px}.modalbody{padding:12px 14px 16px}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.field label{display:block;font-size:12px;color:#607080;font-weight:700;margin:0 0 4px}.modalactions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}.ghost{background:#e5ebf1;color:#17212b}
-                input,select{min-width:0;width:100%;border:0;background:white;border-radius:7px;padding:9px 8px;font-size:14px;outline:1px solid transparent}input:focus,select:focus{outline:2px solid #8db8ff}
-                button{border:0;border-radius:7px;padding:9px 10px;color:white;font-weight:700;background:#126d5c;white-space:nowrap}button.redbtn{background:#9a2b2b}button.bluebtn{background:#1f5d8f}
-                table{width:100%;border-collapse:collapse;margin-top:8px;background:white;border-radius:9px;overflow:hidden}th,td{text-align:left;padding:8px;border-bottom:1px solid #e3e9f0;font-size:13px}th{background:#f6eefa;color:#4f3a70}td.actions{white-space:nowrap}
-                @media(max-width:720px){.grid,.staffgrid{grid-template-columns:repeat(2,1fr)}.tool,.atttool,.formgrid,.holidaybar{grid-template-columns:1fr}.profile h2{font-size:15px}}
-                </style></head><body><div class="top"><h1>Admin Dashboard</h1><small>Shared backend test</small></div><div class="wrap" id="app"></div><div id="modal" class="modal"></div>
-                <script>
-                let editing=false, rowsCache=[], openStaffId='';
-                async function api(path,body){await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});editing=false;await load();if(openStaffId){const fresh=rowsCache.find(e=>e.id===openStaffId);if(fresh)openEmployeeModal(fresh);}}
-                function val(id){return document.getElementById(id).value}
-                function moneyAction(e,i){return `<div class="tool"><select id="act${i}" onfocus="editing=true"><option value="advance">Add advance</option><option value="repayment">Repayment</option><option value="salary">Pay salary</option><option value="wage">Update salary/day</option></select><input id="amt${i}" type="number" inputmode="decimal" placeholder="Amount" onfocus="editing=true" onblur="setTimeout(()=>editing=false,400)"><button onclick="runMoney('${e.id}',${i})">Apply</button></div>`}
-                function runMoney(id,i){const a=val('act'+i), amount=val('amt'+i); const path=a==='advance'?'/api/advance':a==='repayment'?'/api/repayment':a==='salary'?'/api/salary-payment':'/api/daily-wage'; api(path,{staffId:id,amount})}
-                function monthAttendance(e,i){return `<div class="card"><h3>Current month attendance</h3><div class="atttool"><input id="full${i}" type="number" inputmode="numeric" placeholder="Full days" onfocus="editing=true"><input id="half${i}" type="number" inputmode="numeric" placeholder="Half days" onfocus="editing=true"><input id="absent${i}" type="number" inputmode="numeric" placeholder="Absent days" onfocus="editing=true"><button onclick="api('/api/month-attendance',{staffId:'${e.id}',fullDays:val('full${i}'),halfDays:val('half${i}'),absentDays:val('absent${i}')})">Update</button></div></div>`}
-                function closeModal(){editing=false;openStaffId='';document.getElementById('modal').classList.remove('open');document.getElementById('modal').innerHTML=''}
-                function saveEmployee(id){api('/api/staff',{staffId:id||'',name:val('mName'),phone:val('mPhone'),emergencyContact:val('mEmergency'),dailyWage:val('mWage')||650,dob:val('mDob'),joiningDate:val('mJoin')});if(!id)closeModal()}
-                function addButton(){return `<div class="addbar"><button class="plus" title="Add employee" onclick="openEmployeeModal()">+</button></div>`}
-                function holidayBox(s){return `<div class="card"><div class="holidaybar"><div class="field"><label>Paid public holiday</label><input id="holidayDate" type="date" onfocus="editing=true"></div><button onclick="api('/api/holiday',{date:val('holidayDate')})">Add holiday</button></div><div class="chips">${(s.publicHolidays||[]).map(d=>`<span class="chip">${d}</span>`).join('')}</div></div>`}
-                function field(id,label,type,value,placeholder){return `<div class="field"><label>${label}</label><input id="${id}" type="${type||'text'}" value="${value||''}" placeholder="${placeholder||''}" onfocus="editing=true"></div>`}
-                function employeeForm(e){return `<div class="card"><div class="formgrid">${field('mName','Full name','text',e.name,'Full name')}${field('mPhone','Phone','tel',e.phone,'Phone number')}${field('mEmergency','Emergency contact','tel',e.emergencyContact,'Emergency contact')}${field('mWage','Salary/day','number',e.dailyWage||650,'650')}${field('mDob','Date of birth','date',e.dob,'')}${field('mJoin','Date of joining','date',e.joiningDate,'')}</div><div class="modalactions"><button class="ghost" onclick="closeModal()">Cancel</button><button onclick="saveEmployee('${e.id||''}')">Save</button></div></div>`}
-                function openEmployeeModal(e){editing=true;e=e||{};const isNew=!e.id;openStaffId=isNew?'':e.id;document.getElementById('modal').innerHTML=`<div class="modalbox"><div class="modalhead"><h2>${isNew?'Add Employee':e.name}</h2><button class="ghost" onclick="closeModal()">Close</button></div><div class="modalbody">${employeeForm(e)}${isNew?'':employeeDetails(e,rowsCache.findIndex(r=>r.id===e.id))}</div></div>`;document.getElementById('modal').classList.add('open')}
-                function avatar(e){return e.photo?`<img class="avatar" src="data:image/jpeg;base64,${e.photo}">`:`<div class="avatar">${e.name.split(' ').map(p=>p[0]).slice(0,2).join('')}</div>`}
-                function leaveTable(e){return e.leaves.length?`<table><thead><tr><th>From</th><th>To</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead><tbody>${e.leaves.map((l,idx)=>`<tr><td>${l.from}</td><td>${l.to}</td><td>${l.reason}</td><td>${l.status}</td><td class="actions">${l.status==='Pending'?`<button onclick="api('/api/leave-status',{staffId:'${e.id}',index:${idx},status:'Approved'})">Approve</button><button class="redbtn" onclick="api('/api/leave-status',{staffId:'${e.id}',index:${idx},status:'Rejected'})">Reject</button>`:'-'}</td></tr>`).join('')}</tbody></table>`:'<small>No leave requests</small>'}
-                function salaryTable(e){return e.salaryLogs&&e.salaryLogs.length?`<table><thead><tr><th>Date</th><th>Paid salary</th></tr></thead><tbody>${e.salaryLogs.slice().reverse().map(r=>`<tr><td>${r.date}</td><td>Rs ${r.amount}</td></tr>`).join('')}</tbody></table>`:'<small>No salary payment rows</small>'}
-                function advanceTable(e){return e.advanceLogs&&e.advanceLogs.length?`<table><thead><tr><th>Date</th><th>Action</th><th>Amount</th><th>Balance</th></tr></thead><tbody>${e.advanceLogs.slice().reverse().map(r=>`<tr><td>${r.date}</td><td>${r.type==='ADVANCE'?'Advance':'Repayment'}</td><td>Rs ${r.amount}</td><td>Rs ${r.balance}</td></tr>`).join('')}</tbody></table>`:'<small>No advance rows</small>'}
-                function historyTable(e){return `<table><thead><tr><th>Month</th><th>Days</th><th>Earned</th><th>Paid</th><th>Leave days</th></tr></thead><tbody>${e.history.map(h=>`<tr><td>${h.month}</td><td>${h.days}</td><td>Rs ${h.earned}</td><td>Rs ${h.paid}</td><td>${h.leaves}</td></tr>`).join('')}</tbody></table>`}
-                function summary(rows){const p=rows.filter(e=>e.today==='Full day'||e.today==='Paid holiday').length,h=rows.filter(e=>e.today==='Half day').length,a=rows.filter(e=>e.today==='Absent').length;return `<div class="summary"><div class="grid"><div class="card metric blue"><small>Staff</small><br><b>${rows.length}</b></div><div class="card metric green"><small>Present</small><br><b>${p}</b></div><div class="card metric blue"><small>Half day</small><br><b>${h}</b></div><div class="card metric red"><small>Absent</small><br><b>${a}</b></div></div></div>`}
-                function statusBadge(e){const cls=e.today==='Full day'?'':e.today==='Half day'?'warn':'bad';return `<span class="badge ${cls}">${e.today}</span>`}
-                function employeeDetails(e,i){return `<div class="grid"><div class="card metric green"><small>Month days</small><br><b>${e.monthDays}</b><br><small>F ${e.fullDays} H ${e.halfDays} A ${e.absentDays}</small></div><div class="card metric green"><small>After last paid</small><br><b>Rs ${e.remaining}</b></div><div class="card metric red"><small>Advance</small><br><b>Rs ${e.advance}</b></div><div class="card metric blue"><small>Last paid</small><br><b>Rs ${e.paid}</b><br><small>${e.lastSalaryDate||''}</small></div></div><div class="tools">${moneyAction(e,i)}</div>${monthAttendance(e,i)}<h3>Salary rows</h3>${salaryTable(e)}<h3>Advance ledger</h3>${advanceTable(e)}<h3>Leave</h3>${leaveTable(e)}<h3>History</h3>${historyTable(e)}`}
-                function staffTile(e,i){const pending=e.leaves.some(l=>l.status==='Pending');return `<div class="card tile" onclick="openEmployeeModal(rowsCache[${i}])"><div class="profile">${avatar(e)}<div><h2>${e.name}</h2><small>${e.phone||'No phone'} • Rs ${e.dailyWage}/day</small><br>${statusBadge(e)} ${pending?'<span class="badge warn">Pending leave</span>':''}</div></div></div>`}
-                async function load(){const s=await (await fetch('/api/state')).json();const rows=s.staff.filter(e=>e.role==='employee');rowsCache=rows;document.getElementById('app').innerHTML=summary(rows)+holidayBox(s)+addButton()+`<div class="staffgrid">${rows.map(staffTile).join('')}</div>`;} load(); setInterval(()=>{if(!editing)load();},3000);
-                </script></body></html>
-                """;
+        Path adminPage = Paths.get("web", "admin.html");
+        try {
+            if (Files.exists(adminPage)) {
+                return new String(Files.readAllBytes(adminPage), StandardCharsets.UTF_8);
+            }
+        } catch (IOException exception) {
+            System.out.println("Could not read admin page: " + exception.getMessage());
+        }
+        return "<!doctype html><html><body><h1>Admin Dashboard</h1><p>web/admin.html not found.</p></body></html>";
     }
 
     private Map<String, String> body(HttpExchange exchange) throws IOException {
-        String raw = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+        String raw = new String(readAllBytes(exchange), StandardCharsets.UTF_8).trim();
         Map<String, String> map = new LinkedHashMap<>();
         if (raw.length() < 2) return map;
         String inner = raw.substring(1, raw.length() - 1);
@@ -1099,6 +1049,16 @@ public class Main {
             if (parts.length == 2) map.put(clean(parts[0]), clean(parts[1]));
         }
         return map;
+    }
+
+    private byte[] readAllBytes(HttpExchange exchange) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[4096];
+        int read;
+        while ((read = exchange.getRequestBody().read(chunk)) != -1) {
+            buffer.write(chunk, 0, read);
+        }
+        return buffer.toByteArray();
     }
 
     private String clean(String value) {
@@ -1141,8 +1101,12 @@ public class Main {
 
     private String firstName(String name) {
         String trimmed = name == null ? "" : name.trim();
-        if (trimmed.isBlank()) return "";
+        if (isBlank(trimmed)) return "";
         return trimmed.split("\\s+")[0];
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private String last10(String phone) {
@@ -1151,17 +1115,17 @@ public class Main {
     }
 
     private boolean matchesLoginPhone(Staff employee, String phone) {
-        if (phone.isBlank()) return false;
+        if (isBlank(phone)) return false;
         if (last10(employee.phone).equals(phone)) return true;
         if (employee.loginPhones == null) return false;
         return employee.loginPhones.stream().anyMatch(alias -> last10(alias).equals(phone));
     }
 
     private List<String> splitLoginAliases(String aliases) {
-        if (aliases == null || aliases.isBlank()) return new ArrayList<>();
+        if (isBlank(aliases)) return new ArrayList<>();
         return Arrays.stream(aliases.split(","))
                 .map(String::trim)
-                .filter(value -> !value.isBlank())
+                .filter(value -> !isBlank(value))
                 .collect(Collectors.toCollection(ArrayList::new));
     }
 
@@ -1169,7 +1133,7 @@ public class Main {
         if (employee.loginPhones == null) return "";
         return employee.loginPhones.stream()
                 .map(this::last10)
-                .filter(value -> !value.isBlank())
+                .filter(value -> !isBlank(value))
                 .distinct()
                 .collect(Collectors.joining(","));
     }

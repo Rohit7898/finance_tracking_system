@@ -12,7 +12,7 @@ set "OUT=%ROOT%out"
 set "LOG_DIR=%ROOT%logs"
 set "LOG_FILE=%LOG_DIR%\backend.log"
 set "RUNTIME_DIR=%ROOT%.runtime"
-set "PORTABLE_JDK=%RUNTIME_DIR%\jdk-17"
+set "PORTABLE_JDK=%RUNTIME_DIR%\jdk-8-32bit"
 set "JAVA_EXE=java"
 set "JAVAC_EXE=javac"
 
@@ -31,7 +31,7 @@ echo.
 echo  1. Run backend now
 echo  2. Install auto-start task
 echo  3. Remove auto-start task
-echo  4. Setup/check portable Java
+echo  4. Setup/check portable Java 8 32-bit
 echo  5. Exit
 echo.
 set /p choice=Choose option: 
@@ -88,7 +88,7 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Compiling backend...
-"%JAVAC_EXE%" -d "%OUT%" "%SRC%"
+"%JAVAC_EXE%" -source 8 -target 8 -d "%OUT%" "%SRC%"
 if errorlevel 1 (
     echo.
     echo Compile failed. Check src\Main.java.
@@ -154,27 +154,27 @@ set "JAVAC_EXE=%PORTABLE_JDK%\bin\javac.exe"
 exit /b 0
 
 :download_portable_java
-set "JAVA_ZIP=%TEMP%\temurin17-jdk.zip"
-set "JAVA_URL=https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse?project=jdk"
+set "JAVA_ZIP=%TEMP%\portable-java8-32bit.zip"
+set "JAVA_URL=https://api.adoptopenjdk.net/v3/binary/latest/8/ga/windows/x32/jdk/openj9/normal/adoptopenjdk"
 where powershell >nul 2>nul
 if errorlevel 1 (
     echo PowerShell is not available.
-    echo Install JDK 17 manually or copy a JDK folder to:
+    echo Copy a portable Java 8 32-bit JDK folder to:
     echo %PORTABLE_JDK%
     exit /b 1
 )
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
-echo Downloading portable JDK 17 ZIP...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%JAVA_URL%' -OutFile '%JAVA_ZIP%'"
+echo Downloading portable Java 8 32-bit ZIP...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}; (New-Object Net.WebClient).DownloadFile('%JAVA_URL%', '%JAVA_ZIP%')"
 if errorlevel 1 (
     echo.
     echo Could not download portable Java.
-    echo Manual fallback: download JDK 17 ZIP and extract it to:
+    echo Manual fallback: download Java 8 32-bit JDK ZIP and extract it to:
     echo %PORTABLE_JDK%
     exit /b 1
 )
 echo Extracting portable JDK...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '%RUNTIME_DIR%\jdk-temp') { Remove-Item -Recurse -Force '%RUNTIME_DIR%\jdk-temp' }; Expand-Archive -Force '%JAVA_ZIP%' '%RUNTIME_DIR%\jdk-temp'; $jdk = Get-ChildItem '%RUNTIME_DIR%\jdk-temp' -Directory | Select-Object -First 1; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force '%RUNTIME_DIR%\jdk-temp'"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp -Directory | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
 if errorlevel 1 (
     echo.
     echo Could not extract portable Java.
@@ -189,11 +189,15 @@ if not exist "%PORTABLE_JDK%\bin\javac.exe" (
 exit /b 0
 
 :refresh_java_path
-for /d %%D in ("%ProgramFiles%\Eclipse Adoptium\jdk-17*") do (
+for /d %%D in ("%ProgramFiles%\Eclipse Adoptium\jdk-8*") do (
     set "JAVA_HOME=%%~fD"
     set "PATH=%%~fD\bin;%PATH%"
 )
-for /d %%D in ("%ProgramFiles%\Java\jdk-17*") do (
+for /d %%D in ("%ProgramFiles%\Java\jdk1.8*") do (
+    set "JAVA_HOME=%%~fD"
+    set "PATH=%%~fD\bin;%PATH%"
+)
+for /d %%D in ("%ProgramFiles%\Java\jdk-8*") do (
     set "JAVA_HOME=%%~fD"
     set "PATH=%%~fD\bin;%PATH%"
 )
