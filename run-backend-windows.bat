@@ -198,7 +198,7 @@ if errorlevel 1 (
 )
 :extract_portable_java
 echo Extracting portable JDK...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp -Directory | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp | Where-Object { $_.PSIsContainer } | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
 if errorlevel 1 (
     echo.
     echo Could not extract portable Java.
