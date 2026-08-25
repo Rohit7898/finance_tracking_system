@@ -14,6 +14,7 @@ set "LOG_FILE=%LOG_DIR%\backend.log"
 
 if /I "%~1"=="install" goto install_task
 if /I "%~1"=="uninstall" goto uninstall_task
+if /I "%~1"=="setup-java" goto setup_java
 if /I "%~1"=="run" goto run_server
 goto menu
 
@@ -26,13 +27,26 @@ echo.
 echo  1. Run backend now
 echo  2. Install auto-start task
 echo  3. Remove auto-start task
-echo  4. Exit
+echo  4. Install/check Java JDK
+echo  5. Exit
 echo.
 set /p choice=Choose option: 
 if "%choice%"=="1" goto run_server
 if "%choice%"=="2" goto install_task
 if "%choice%"=="3" goto uninstall_task
-if "%choice%"=="4" exit /b 0
+if "%choice%"=="4" goto setup_java
+if "%choice%"=="5" exit /b 0
+goto menu
+
+:setup_java
+call :ensure_java
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
+echo.
+echo Java setup is ready.
+pause
 goto menu
 
 :install_task
@@ -65,16 +79,8 @@ cd /d "%ROOT%"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%OUT%" mkdir "%OUT%"
 
-echo.
-echo Checking Java...
-where javac >nul 2>nul
-if errorlevel 1 (
-    echo Java JDK was not found.
-    echo Install JDK 17 or newer, then reopen this file.
-    echo Download: https://adoptium.net/temurin/releases/
-    pause
-    exit /b 1
-)
+call :ensure_java
+if errorlevel 1 exit /b 1
 
 echo.
 echo Compiling backend...
@@ -103,3 +109,61 @@ echo [%date% %time%] Backend stopped. Restarting in 5 seconds...>> "%LOG_FILE%"
 echo Backend stopped. Restarting in 5 seconds...
 timeout /t 5 /nobreak >nul
 goto restart_loop
+
+:ensure_java
+echo.
+echo Checking Java JDK...
+where javac >nul 2>nul
+if not errorlevel 1 (
+    javac -version
+    exit /b 0
+)
+
+call :refresh_java_path
+where javac >nul 2>nul
+if not errorlevel 1 (
+    javac -version
+    exit /b 0
+)
+
+echo Java JDK was not found.
+echo Trying to install Eclipse Temurin JDK 17 using winget...
+echo.
+where winget >nul 2>nul
+if errorlevel 1 (
+    echo winget is not available on this Windows system.
+    echo Install JDK 17 or newer manually, then run this file again.
+    echo Download: https://adoptium.net/temurin/releases/
+    exit /b 1
+)
+
+winget install --id EclipseAdoptium.Temurin.17.JDK --source winget --accept-package-agreements --accept-source-agreements
+if errorlevel 1 (
+    echo.
+    echo Java install failed. Right-click this file and choose "Run as administrator", or install manually:
+    echo https://adoptium.net/temurin/releases/
+    exit /b 1
+)
+
+call :refresh_java_path
+where javac >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo Java installed, but PATH is not refreshed in this window.
+    echo Close this window and run this batch file again.
+    exit /b 1
+)
+
+javac -version
+exit /b 0
+
+:refresh_java_path
+for /d %%D in ("%ProgramFiles%\Eclipse Adoptium\jdk-17*") do (
+    set "JAVA_HOME=%%~fD"
+    set "PATH=%%~fD\bin;%PATH%"
+)
+for /d %%D in ("%ProgramFiles%\Java\jdk-17*") do (
+    set "JAVA_HOME=%%~fD"
+    set "PATH=%%~fD\bin;%PATH%"
+)
+exit /b 0
