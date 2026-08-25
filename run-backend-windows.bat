@@ -132,19 +132,21 @@ echo.
 where winget >nul 2>nul
 if errorlevel 1 (
     echo winget is not available on this Windows system.
-    echo Install JDK 17 or newer manually, then run this file again.
-    echo Download: https://adoptium.net/temurin/releases/
-    exit /b 1
+    echo Trying direct PowerShell download/install instead...
+    call :install_java_powershell
+    if errorlevel 1 exit /b 1
+    goto java_installed_check
 )
 
 winget install --id EclipseAdoptium.Temurin.17.JDK --source winget --accept-package-agreements --accept-source-agreements
 if errorlevel 1 (
     echo.
-    echo Java install failed. Right-click this file and choose "Run as administrator", or install manually:
-    echo https://adoptium.net/temurin/releases/
-    exit /b 1
+    echo winget install failed. Trying direct PowerShell download/install instead...
+    call :install_java_powershell
+    if errorlevel 1 exit /b 1
 )
 
+:java_installed_check
 call :refresh_java_path
 where javac >nul 2>nul
 if errorlevel 1 (
@@ -155,6 +157,35 @@ if errorlevel 1 (
 )
 
 javac -version
+exit /b 0
+
+:install_java_powershell
+set "JAVA_MSI=%TEMP%\temurin17-jdk.msi"
+set "JAVA_URL=https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse?project=jdk"
+where powershell >nul 2>nul
+if errorlevel 1 (
+    echo PowerShell is not available.
+    echo Install JDK 17 or newer manually, then run this file again:
+    echo https://adoptium.net/temurin/releases/
+    exit /b 1
+)
+echo Downloading JDK 17 installer...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%JAVA_URL%' -OutFile '%JAVA_MSI%'"
+if errorlevel 1 (
+    echo.
+    echo Could not download Java installer.
+    echo Install JDK 17 or newer manually, then run this file again:
+    echo https://adoptium.net/temurin/releases/
+    exit /b 1
+)
+echo Installing JDK 17...
+msiexec /i "%JAVA_MSI%" /qn /norestart
+if errorlevel 1 (
+    echo.
+    echo Java install failed. Right-click this file and choose "Run as administrator", or install manually:
+    echo https://adoptium.net/temurin/releases/
+    exit /b 1
+)
 exit /b 0
 
 :refresh_java_path
