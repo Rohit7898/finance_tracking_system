@@ -39,6 +39,7 @@ local.properties
 ### Runtime ###
 logs/
 .runtime/
+portable-java8-32bit.zip
 
 ### Local Python ###
 .venv/
