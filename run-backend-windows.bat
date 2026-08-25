@@ -12,7 +12,7 @@ set "OUT=%ROOT%out"
 set "LOG_DIR=%ROOT%logs"
 set "LOG_FILE=%LOG_DIR%\backend.log"
 set "RUNTIME_DIR=%ROOT%.runtime"
-set "PORTABLE_JDK=%RUNTIME_DIR%\jdk-8-32bit"
+set "PORTABLE_JDK=%RUNTIME_DIR%\jdk-8-win7-32bit"
 set "JAVA_EXE=java"
 set "JAVAC_EXE=javac"
 
@@ -156,7 +156,7 @@ exit /b 0
 :download_portable_java
 set "JAVA_ZIP=%TEMP%\portable-java8-32bit.zip"
 set "LOCAL_JAVA_ZIP=%ROOT%portable-java8-32bit.zip"
-set "JAVA_URL=https://api.adoptopenjdk.net/v3/binary/latest/8/ga/windows/x32/jdk/openj9/normal/adoptopenjdk"
+set "JAVA_URL=https://cdn.azul.com/zulu/bin/zulu8.54.0.21-ca-jdk8.0.292-win_i686.zip"
 where powershell >nul 2>nul
 if errorlevel 1 (
     echo PowerShell is not available.
@@ -165,12 +165,6 @@ if errorlevel 1 (
     exit /b 1
 )
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
-if exist "%LOCAL_JAVA_ZIP%" (
-    echo Found local Java ZIP:
-    echo %LOCAL_JAVA_ZIP%
-    set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
-    goto extract_portable_java
-)
 if exist "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa" (
     echo Rebuilding bundled Java ZIP from repository parts...
     if exist "%LOCAL_JAVA_ZIP%" del /f /q "%LOCAL_JAVA_ZIP%"
@@ -180,6 +174,12 @@ if exist "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa" (
         echo Could not rebuild bundled Java ZIP.
         exit /b 1
     )
+    set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
+    goto extract_portable_java
+)
+if exist "%LOCAL_JAVA_ZIP%" (
+    echo Found local Java ZIP:
+    echo %LOCAL_JAVA_ZIP%
     set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
     goto extract_portable_java
 )
