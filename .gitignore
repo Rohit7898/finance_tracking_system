@@ -38,6 +38,7 @@ local.properties
 
 ### Runtime ###
 logs/
+.runtime/
 
 ### Local Python ###
 .venv/
