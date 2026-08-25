@@ -78,6 +78,8 @@ public class MainActivity extends Activity {
     private String activeTab = "dashboard";
     private String pendingLoginPhone;
     private boolean pendingShopLocationSetup;
+    private boolean pendingAttendanceMark;
+    private boolean pendingAutoAttendancePermission;
     private boolean syncInProgress;
     private boolean autoAttendanceInProgress;
     private boolean pendingFlushInProgress;
@@ -815,7 +817,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (!hasLocationPermission()) {
-            pendingShopLocationSetup = true;
+            pendingAttendanceMark = true;
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
             return;
         }
@@ -1372,6 +1374,7 @@ public class MainActivity extends Activity {
 
     private void setCurrentLocationAsShop() {
         if (!hasLocationPermission()) {
+            pendingShopLocationSetup = true;
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
             return;
         }
@@ -1423,8 +1426,15 @@ public class MainActivity extends Activity {
 
     private void tryAutoPresentAtShop() {
         if (autoAttendanceInProgress || selectedStaff == null || isAdmin()) return;
+        if (LocalDate.now().getDayOfWeek() == DayOfWeek.SUNDAY) return;
         if (hasApprovedLeaveToday(selectedStaff)) return;
-        if (!"NOT_MARKED".equals(todayStatus(selectedStaff.id)) || !hasLocationPermission()) return;
+        if (!"NOT_MARKED".equals(todayStatus(selectedStaff.id))) return;
+        if (!hasLocationPermission()) {
+            if (pendingAutoAttendancePermission) return;
+            pendingAutoAttendancePermission = true;
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
+            return;
+        }
         String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         if (!canUseDevice(deviceId)) return;
         autoAttendanceInProgress = true;
@@ -1523,7 +1533,7 @@ public class MainActivity extends Activity {
 
     private void startAutoSync() {
         syncHandler.removeCallbacks(autoSyncRunnable);
-        syncHandler.postDelayed(autoSyncRunnable, 5000);
+        syncHandler.post(autoSyncRunnable);
     }
 
     private void stopAutoSync() {
@@ -1891,8 +1901,14 @@ public class MainActivity extends Activity {
             if (pendingShopLocationSetup) {
                 pendingShopLocationSetup = false;
                 setCurrentLocationAsShop();
-            } else {
+            } else if (pendingAttendanceMark) {
+                pendingAttendanceMark = false;
                 markPresent();
+            } else if (pendingAutoAttendancePermission) {
+                pendingAutoAttendancePermission = false;
+                tryAutoPresentAtShop();
+            } else {
+                tryAutoPresentAtShop();
             }
         } else if (requestCode == PHONE_REQUEST && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             if (pendingLoginPhone != null) {
@@ -1900,6 +1916,9 @@ public class MainActivity extends Activity {
                 pendingLoginPhone = null;
             }
         } else {
+            pendingShopLocationSetup = false;
+            pendingAttendanceMark = false;
+            pendingAutoAttendancePermission = false;
             toast(requestCode == PHONE_REQUEST ? "Phone permission is required for SIM check" : "Location permission is required");
         }
     }
