@@ -171,6 +171,18 @@ if exist "%LOCAL_JAVA_ZIP%" (
     set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
     goto extract_portable_java
 )
+if exist "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa" (
+    echo Rebuilding bundled Java ZIP from repository parts...
+    if exist "%LOCAL_JAVA_ZIP%" del /f /q "%LOCAL_JAVA_ZIP%"
+    copy /b "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ab"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ac" "%LOCAL_JAVA_ZIP%" >nul
+    if errorlevel 1 (
+        echo.
+        echo Could not rebuild bundled Java ZIP.
+        exit /b 1
+    )
+    set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
+    goto extract_portable_java
+)
 echo Downloading portable Java 8 32-bit ZIP...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}; (New-Object Net.WebClient).DownloadFile('%JAVA_URL%', '%JAVA_ZIP%')"
 if errorlevel 1 (
