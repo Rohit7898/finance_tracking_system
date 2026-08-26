@@ -98,7 +98,10 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("attendance-app", MODE_PRIVATE);
         seedData();
-        if (isLoggedIn()) {
+        if (BuildConfig.ADMIN_APP) {
+            ensureAdminSession();
+            buildUi();
+        } else if (isLoggedIn()) {
             buildUi();
         } else {
             showLogin();
@@ -108,7 +111,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (isLoggedIn() && selectedStaff != null) {
+        if (BuildConfig.ADMIN_APP && selectedStaff != null) {
+            syncFromBackend();
+            startAutoSync();
+        } else if (isLoggedIn() && selectedStaff != null) {
             syncFromBackend();
             uploadLocalPhotoIfAny();
             startAutoSync();
@@ -132,6 +138,13 @@ public class MainActivity extends Activity {
         bhumika.emergencyContact = "Not added yet";
 
         staffById.put(bhumika.id, bhumika);
+        Staff rohitAdmin = new Staff("OP001", "Rohit Prajapati", 0);
+        rohitAdmin.nickname = "Rohit";
+        rohitAdmin.phone = "8962569527";
+        rohitAdmin.dateOfBirth = LocalDate.of(1994, 12, 1);
+        rohitAdmin.dateOfJoining = LocalDate.of(2026, 6, 1);
+        rohitAdmin.emergencyContact = "Not added yet";
+        staffById.put(rohitAdmin.id, rohitAdmin);
         addOperationStaff("OP002", "Shyam lal nishad");
         addOperationStaff("OP003", "Rahul Joshi");
         addOperationStaff("OP004", "Rahul Yadav");
@@ -157,12 +170,34 @@ public class MainActivity extends Activity {
     }
 
     private boolean isLoggedIn() {
+        if (BuildConfig.ADMIN_APP) return true;
         String loggedPhone = prefs.getString("loggedPhone", "");
         String loggedStaffId = prefs.getString("loggedStaffId", "");
         String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         String boundDevice = prefs.getString("loginDevice:" + loggedPhone, "");
         return !loggedStaffId.isEmpty() && !loggedPhone.isEmpty() && (boundDevice.isEmpty() || boundDevice.equals(deviceId));
     }
+
+    private void ensureAdminSession() {
+        prefs.edit()
+                .putString("loggedPhone", "8962569527")
+                .putString("loggedStaffId", "OP001")
+                .putString("loggedRole", "admin")
+                .putString("loggedName", "Rohit Prajapati")
+                .apply();
+        Staff rohit = staffById.get("OP001");
+        if (rohit == null) {
+            rohit = new Staff("OP001", "Rohit Prajapati", 0);
+            rohit.nickname = "Rohit";
+            rohit.phone = "8962569527";
+            rohit.dateOfBirth = LocalDate.of(1994, 12, 1);
+            rohit.dateOfJoining = LocalDate.of(2026, 6, 1);
+            rohit.emergencyContact = "Not added yet";
+            staffById.put(rohit.id, rohit);
+        }
+        selectedStaff = rohit;
+    }
+
 
     private void showLogin() {
         ScrollView scrollView = new ScrollView(this);
@@ -255,10 +290,9 @@ public class MainActivity extends Activity {
                 String staffId = json.optString("staffId", "");
                 String role = json.optString("role", "employee");
                 String name = json.optString("name", "Staff");
-                if ("8962569527".equals(normalized)) {
-                    staffId = "OP001";
-                    role = "admin";
-                    name = "Rohit Prajapati";
+                if (!BuildConfig.ADMIN_APP && "admin".equals(role)) {
+                    runOnUiThread(() -> toast("Use Attendance Admin app for admin login"));
+                    return;
                 }
                 prefs.edit()
                         .putString("loggedPhone", normalized)
@@ -275,6 +309,10 @@ public class MainActivity extends Activity {
     }
 
     private void buildUi() {
+        if (BuildConfig.ADMIN_APP) {
+            ensureAdminSession();
+            activeTab = "admin";
+        }
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(244, 246, 248));
@@ -284,18 +322,21 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView title = text("My Attendance", 24, true);
+        TextView title = text(BuildConfig.ADMIN_APP ? "Admin Panel" : "My Attendance", 24, true);
         header.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         headerAvatar = new LinearLayout(this);
         headerAvatar.setGravity(android.view.Gravity.CENTER);
         headerAvatar.setOnClickListener(v -> {
+            if (BuildConfig.ADMIN_APP) return;
             activeTab = "profile";
             render();
         });
-        header.addView(headerAvatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        if (!BuildConfig.ADMIN_APP) {
+            header.addView(headerAvatar, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        }
         root.addView(header);
 
-        TextView subtitle = text("Operation staff salary and attendance", 13, false);
+        TextView subtitle = text(BuildConfig.ADMIN_APP ? "Staff attendance, salary, leave, and advance control" : "Operation staff salary and attendance", 13, false);
         subtitle.setTextColor(Color.rgb(94, 110, 126));
         root.addView(subtitle);
 
@@ -304,6 +345,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         tabParams.setMargins(0, dp(12), 0, dp(8));
         root.addView(tabBar, tabParams);
+        if (BuildConfig.ADMIN_APP) {
+            tabBar.setVisibility(View.GONE);
+        }
 
         ScrollView scrollView = new ScrollView(this);
         content = new LinearLayout(this);
@@ -322,11 +366,19 @@ public class MainActivity extends Activity {
             selectedStaff.phone = loggedPhone;
         }
         render();
-        uploadLocalPhotoIfAny();
+        if (!BuildConfig.ADMIN_APP) uploadLocalPhotoIfAny();
         startAutoSync();
     }
 
     private void render() {
+        if (BuildConfig.ADMIN_APP) {
+            activeTab = "admin";
+            renderTabs();
+            content.removeAllViews();
+            renderAdmin();
+            syncFromBackend();
+            return;
+        }
         renderHeaderAvatar();
         renderTabs();
         content.removeAllViews();
@@ -611,7 +663,10 @@ public class MainActivity extends Activity {
         int presentCount = 0;
         int absentCount = 0;
         int halfDayCount = 0;
+        int staffCount = 0;
         for (Staff staff : staffById.values()) {
+            if (!isOperationStaff(staff)) continue;
+            staffCount++;
             String status = todayStatus(staff.id);
             if ("PRESENT".equals(status)) {
                 presentCount++;
@@ -628,7 +683,7 @@ public class MainActivity extends Activity {
                 Color.rgb(232, 241, 249),
                 "Admin",
                 new String[][]{
-                        {"Staff", String.valueOf(staffById.size())},
+                        {"Staff", String.valueOf(staffCount)},
                         {"Present", String.valueOf(presentCount)},
                         {"Half day", String.valueOf(halfDayCount)},
                         {"Absent", String.valueOf(absentCount)}
@@ -638,6 +693,7 @@ public class MainActivity extends Activity {
         renderPendingLeaveTasks();
 
         for (Staff staff : staffById.values()) {
+            if (!isOperationStaff(staff)) continue;
             content.addView(adminStaffCard(staff, today));
         }
     }
@@ -645,6 +701,7 @@ public class MainActivity extends Activity {
     private void renderPendingLeaveTasks() {
         boolean hasPending = false;
         for (Staff staff : staffById.values()) {
+            if (!isOperationStaff(staff)) continue;
             for (int i = 0; i < staff.leaves.size(); i++) {
                 LeaveRequest request = staff.leaves.get(i);
                 if ("Pending".equals(request.status)) {
@@ -701,6 +758,10 @@ public class MainActivity extends Activity {
         actionParams.setMargins(0, dp(10), 0, 0);
         card.addView(actions, actionParams);
         return card;
+    }
+
+    private boolean isOperationStaff(Staff staff) {
+        return staff != null && !"ADM001".equals(staff.id) && !"OP001".equals(staff.id);
     }
 
     private void updateLeaveStatus(Staff staff, int index, String status) {
@@ -848,6 +909,10 @@ public class MainActivity extends Activity {
 
     private void renderTabs() {
         tabBar.removeAllViews();
+        if (BuildConfig.ADMIN_APP) {
+            activeTab = "admin";
+            return;
+        }
         tabBar.addView(tabItem(R.drawable.ic_dashboard, "Home", "dashboard"), new LinearLayout.LayoutParams(0, dp(58), 1));
         tabBar.addView(tabGap(), new LinearLayout.LayoutParams(dp(6), dp(46)));
         tabBar.addView(tabItem(R.drawable.ic_leave, "Leave", "leave"), new LinearLayout.LayoutParams(0, dp(58), 1));
@@ -1645,8 +1710,18 @@ public class MainActivity extends Activity {
                 JSONArray staffList = new JSONObject(response).getJSONArray("staff");
                 for (int i = 0; i < staffList.length(); i++) {
                     JSONObject object = staffList.getJSONObject(i);
-                    Staff staff = staffById.get(object.optString("id"));
-                    if (staff == null) continue;
+                    String id = object.optString("id", "");
+                    Staff staff = staffById.get(id);
+                    if (staff == null) {
+                        staff = new Staff(id, object.optString("name", "Staff"), object.optDouble("dailyWage", 0));
+                        staff.nickname = object.optString("nickname", firstName(object.optString("name", "Staff")));
+                        staff.phone = object.optString("phone", "");
+                        staff.dateOfBirth = parseLocalDate(object.optString("dob", ""), LocalDate.of(1995, 1, 1));
+                        staff.dateOfJoining = parseLocalDate(object.optString("joiningDate", ""), LocalDate.of(2026, 6, 1));
+                        staff.emergencyContact = object.optString("emergencyContact", "Not added yet");
+                        staffById.put(staff.id, staff);
+                        changed = true;
+                    }
                     String phone = object.optString("phone", staff.phone);
                     String loggedStaffId = prefs.getString("loggedStaffId", "");
                     String loggedPhone = prefs.getString("loggedPhone", "");
@@ -1654,6 +1729,8 @@ public class MainActivity extends Activity {
                         phone = loggedPhone;
                     }
                     String dob = object.optString("dob", "");
+                    String joining = object.optString("joiningDate", "");
+                    String emergency = object.optString("emergencyContact", staff.emergencyContact);
                     double advance = object.optDouble("advance", staff.advanceBalance);
                     double paid = object.optDouble("paid", staff.lastSalaryAmount);
                     double dailyWage = object.optDouble("dailyWage", staff.dailyWage);
@@ -1683,6 +1760,17 @@ public class MainActivity extends Activity {
                             staff.dateOfBirth = dateOfBirth;
                             changed = true;
                         }
+                    }
+                    if (!joining.isEmpty()) {
+                        LocalDate joiningDate = LocalDate.parse(joining);
+                        if (staff.dateOfJoining == null || !staff.dateOfJoining.equals(joiningDate)) {
+                            staff.dateOfJoining = joiningDate;
+                            changed = true;
+                        }
+                    }
+                    if (emergency != null && !emergency.equals(staff.emergencyContact)) {
+                        staff.emergencyContact = emergency;
+                        changed = true;
                     }
                     if (Math.abs(staff.dailyWage - dailyWage) > 0.01) {
                         staff.dailyWage = dailyWage;
@@ -2042,6 +2130,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean isAdmin() {
+        if (BuildConfig.ADMIN_APP) return true;
         return "admin".equals(prefs.getString("loggedRole", "")) || "ADM001".equals(prefs.getString("loggedStaffId", ""));
     }
 
@@ -2223,6 +2312,20 @@ public class MainActivity extends Activity {
 
     private String key(String staffId, LocalDate date) {
         return staffId + "|" + date;
+    }
+
+    private String firstName(String name) {
+        String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) return "Staff";
+        return trimmed.split("\\s+")[0];
+    }
+
+    private LocalDate parseLocalDate(String value, LocalDate fallback) {
+        try {
+            return LocalDate.parse(value);
+        } catch (Exception exception) {
+            return fallback;
+        }
     }
 
     private String blankDate(LocalDate date) {

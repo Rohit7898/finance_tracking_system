@@ -6,11 +6,31 @@ android {
     namespace 'com.company.attendance'
     compileSdk 36
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId 'com.company.attendance'
         minSdk 26
         targetSdk 36
         versionCode 1
         versionName '1.0'
+    }
+
+    flavorDimensions 'mode'
+    productFlavors {
+        employee {
+            dimension 'mode'
+            applicationIdSuffix '.employee'
+            resValue 'string', 'app_name', 'Staff Attendance'
+            buildConfigField 'boolean', 'ADMIN_APP', 'false'
+        }
+        admin {
+            dimension 'mode'
+            applicationIdSuffix '.admin'
+            resValue 'string', 'app_name', 'Attendance Admin'
+            buildConfigField 'boolean', 'ADMIN_APP', 'true'
+        }
     }
 }
