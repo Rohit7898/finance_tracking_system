@@ -426,15 +426,6 @@ public class MainActivity extends Activity {
 
     private void renderProfile() {
         content.addView(profileCard());
-        Button shopButton = primaryButton("Set Current Location as Shop", Color.rgb(18, 109, 92));
-        shopButton.setOnClickListener(v -> setCurrentLocationAsShop());
-        content.addView(shopButton);
-        Button photoButton = primaryButton("Add / Edit Profile Photo", Color.rgb(47, 111, 115));
-        photoButton.setOnClickListener(v -> pickProfilePhoto());
-        content.addView(photoButton);
-        Button cameraButton = primaryButton("Take Photo", Color.rgb(31, 93, 143));
-        cameraButton.setOnClickListener(v -> takeProfilePhoto());
-        content.addView(cameraButton);
     }
 
     private void renderLeave() {
@@ -926,61 +917,69 @@ public class MainActivity extends Activity {
 
     private LinearLayout profileCard() {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setPadding(dp(14), dp(14), dp(14), dp(14));
-        card.setBackground(roundRect(Color.rgb(229, 244, 245), 10));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(14), dp(14), dp(12));
+        card.setBackground(roundRect(Color.WHITE, 10));
         card.setElevation(dp(2));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, dp(12), 0, 0);
         card.setLayoutParams(params);
 
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
         Bitmap cameraBitmap = bitmapFromBase64(prefs.getString("photoBitmap:" + selectedStaff.id, ""));
         String photoUri = prefs.getString("photo:" + selectedStaff.id, "");
         if (cameraBitmap != null) {
-            card.addView(employeeAvatar(selectedStaff, dp(72)), new LinearLayout.LayoutParams(dp(72), dp(72)));
+            topRow.addView(employeeAvatar(selectedStaff, dp(76)), new LinearLayout.LayoutParams(dp(76), dp(76)));
         } else if (photoUri.isEmpty()) {
-            card.addView(employeeAvatar(selectedStaff, dp(72)), new LinearLayout.LayoutParams(dp(72), dp(72)));
+            topRow.addView(employeeAvatar(selectedStaff, dp(76)), new LinearLayout.LayoutParams(dp(76), dp(76)));
         } else {
-            card.addView(employeeAvatar(selectedStaff, dp(72)), new LinearLayout.LayoutParams(dp(72), dp(72)));
+            topRow.addView(employeeAvatar(selectedStaff, dp(76)), new LinearLayout.LayoutParams(dp(76), dp(76)));
         }
+
+        LinearLayout summary = new LinearLayout(this);
+        summary.setOrientation(LinearLayout.VERTICAL);
+        summary.setPadding(dp(12), 0, 0, 0);
+        TextView name = text(selectedStaff.name, 18, true);
+        name.setTextColor(Color.rgb(47, 111, 115));
+        summary.addView(name);
+        TextView sub = text(selectedStaff.nickname + "  |  " + selectedStaff.phone, 13, false);
+        sub.setTextColor(Color.rgb(94, 110, 126));
+        summary.addView(sub);
+        TextView joined = text("Joined " + selectedStaff.dateOfJoining, 12, false);
+        joined.setTextColor(Color.rgb(94, 110, 126));
+        joined.setPadding(0, dp(4), 0, 0);
+        summary.addView(joined);
+        topRow.addView(summary, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(topRow);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(12), 0, dp(2));
+        actions.addView(profileActionButton("Edit profile", Color.rgb(47, 111, 115), v -> showProfileEditor()), new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
+        actions.addView(profileActionButton("Gallery", Color.rgb(31, 93, 143), v -> pickProfilePhoto()), new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
+        actions.addView(profileActionButton("Camera", Color.rgb(122, 77, 154), v -> takeProfilePhoto()), new LinearLayout.LayoutParams(0, dp(42), 1));
+        card.addView(actions);
 
         LinearLayout details = new LinearLayout(this);
         details.setOrientation(LinearLayout.VERTICAL);
-        details.setPadding(dp(12), 0, 0, 0);
-        TextView name = text(selectedStaff.name, 18, true);
-        name.setTextColor(Color.rgb(47, 111, 115));
-        details.addView(name);
+        details.setPadding(0, dp(8), 0, 0);
         details.addView(profileRow("Nickname", selectedStaff.nickname));
-        details.addView(profileDateOfBirthRow());
+        details.addView(profileRow("Date of birth", selectedStaff.dateOfBirth.toString()));
         details.addView(profileRow("Phone", selectedStaff.phone));
         details.addView(profileRow("Joining date", selectedStaff.dateOfJoining.toString()));
         details.addView(profileRow("Emergency", selectedStaff.emergencyContact));
-        card.addView(details, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(details);
+
+        Button shopButton = profileActionButton("Update shop GPS", Color.rgb(18, 109, 92), v -> setCurrentLocationAsShop());
+        LinearLayout.LayoutParams shopParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+        shopParams.setMargins(0, dp(10), 0, 0);
+        card.addView(shopButton, shopParams);
         return card;
-    }
-
-    private LinearLayout profileDateOfBirthRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(9), 0, 0);
-
-        LinearLayout textBlock = new LinearLayout(this);
-        textBlock.setOrientation(LinearLayout.VERTICAL);
-        TextView labelView = text("Date of birth", 12, true);
-        labelView.setTextColor(Color.rgb(94, 110, 126));
-        TextView valueView = text(selectedStaff.dateOfBirth.toString(), 15, false);
-        valueView.setTextColor(Color.rgb(39, 51, 64));
-        textBlock.addView(labelView);
-        textBlock.addView(valueView);
-        row.addView(textBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-
-        Button edit = primaryButton("Edit", Color.rgb(47, 111, 115));
-        edit.setTextSize(12);
-        edit.setPadding(dp(8), 0, dp(8), 0);
-        edit.setOnClickListener(v -> showBirthDatePicker());
-        row.addView(edit, new LinearLayout.LayoutParams(dp(76), dp(42)));
-        return row;
     }
 
     private LinearLayout profileRow(String label, String value) {
@@ -1046,6 +1045,45 @@ public class MainActivity extends Activity {
             return;
         }
         startActivityForResult(intent, CAMERA_REQUEST);
+    }
+
+    private void showProfileEditor() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(16), dp(6), dp(16), 0);
+
+        EditText dob = input("Date of birth");
+        dob.setInputType(InputType.TYPE_NULL);
+        dob.setFocusable(false);
+        dob.setText(selectedStaff.dateOfBirth == null ? "" : selectedStaff.dateOfBirth.toString());
+        dob.setOnClickListener(v -> showBirthDatePicker(dob));
+        EditText emergency = input("Emergency contact");
+        emergency.setInputType(InputType.TYPE_CLASS_PHONE);
+        emergency.setText(selectedStaff.emergencyContact == null ? "" : selectedStaff.emergencyContact);
+        form.addView(dob);
+        form.addView(emergency);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit profile")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    LocalDate updatedDob;
+                    try {
+                        updatedDob = LocalDate.parse(dob.getText().toString().trim());
+                    } catch (Exception exception) {
+                        toast("Select valid date of birth");
+                        return;
+                    }
+                    String emergencyValue = emergency.getText().toString().trim();
+                    selectedStaff.dateOfBirth = updatedDob;
+                    selectedStaff.emergencyContact = emergencyValue.isEmpty() ? "Not added yet" : emergencyValue;
+                    postBackend("/api/staff", "{\"staffId\":\"" + selectedStaff.id + "\",\"dob\":\"" + updatedDob
+                            + "\",\"emergencyContact\":\"" + escape(selectedStaff.emergencyContact) + "\"}");
+                    toast("Profile updated");
+                    render();
+                })
+                .show();
     }
 
     @Override
@@ -1235,6 +1273,10 @@ public class MainActivity extends Activity {
     }
 
     private void showBirthDatePicker() {
+        showBirthDatePicker(null);
+    }
+
+    private void showBirthDatePicker(EditText target) {
         LocalDate current = selectedStaff.dateOfBirth == null ? LocalDate.of(1995, 1, 1) : selectedStaff.dateOfBirth;
         DatePicker picker = new DatePicker(this);
         picker.setMaxDate(LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
@@ -1245,6 +1287,11 @@ public class MainActivity extends Activity {
                 .create();
         picker.init(current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth(), (view, year, monthOfYear, dayOfMonth) -> {
             LocalDate updated = LocalDate.of(year, monthOfYear + 1, dayOfMonth);
+            if (target != null) {
+                target.setText(updated.toString());
+                dialog[0].dismiss();
+                return;
+            }
             selectedStaff.dateOfBirth = updated;
             postBackend("/api/staff", "{\"staffId\":\"" + selectedStaff.id + "\",\"dob\":\"" + updated + "\"}");
             toast("Date of birth updated");
@@ -1279,6 +1326,19 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
         params.setMargins(0, dp(12), 0, 0);
         button.setLayoutParams(params);
+        return button;
+    }
+
+    private Button profileActionButton(String label, int color, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextColor(Color.WHITE);
+        button.setTextSize(12);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setPadding(dp(6), 0, dp(6), 0);
+        button.setBackground(roundRect(color, 8));
+        button.setOnClickListener(listener);
         return button;
     }
 
