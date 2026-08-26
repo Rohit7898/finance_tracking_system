@@ -202,14 +202,40 @@ public class Main {
                 changed = true;
             }
         }
-        Staff admin = staff.get("ADM001");
-        if (admin != null && admin.loginPhones.stream().noneMatch(phone -> last10(phone).equals("8962569527"))) {
-            admin.loginPhones.add("8962569527");
+        Staff rohit = staff.get("OP001");
+        if (rohit == null) {
+            rohit = new Staff("OP001", "Rohit Prajapati", "Rohit", "8962569527", 0);
+            rohit.dob = "1994-12-01";
+            rohit.joiningDate = "2026-06-01";
+            rohit.emergencyContact = "Not added yet";
+            staff.put(rohit.id, rohit);
             changed = true;
         }
-        Staff rahul = staff.get("OP003");
-        if (rahul != null && rahul.loginPhones.removeIf(phone -> last10(phone).equals("8962569527"))) {
+        if (!"admin".equals(rohit.role)) {
+            rohit.role = "admin";
             changed = true;
+        }
+        if (!"8962569527".equals(last10(rohit.phone))) {
+            rohit.phone = "8962569527";
+            changed = true;
+        }
+        if (rohit.loginPhones.stream().noneMatch(phone -> last10(phone).equals("8962569527"))) {
+            rohit.loginPhones.add("8962569527");
+            changed = true;
+        }
+        Staff admin = staff.get("ADM001");
+        if (admin != null && admin.loginPhones.removeIf(phone -> last10(phone).equals("8962569527"))) {
+            changed = true;
+        }
+        for (Staff employee : staff.values()) {
+            if ("OP001".equals(employee.id) || "ADM001".equals(employee.id)) continue;
+            if ("8962569527".equals(last10(employee.phone))) {
+                employee.phone = "";
+                changed = true;
+            }
+            if (employee.loginPhones.removeIf(phone -> last10(phone).equals("8962569527"))) {
+                changed = true;
+            }
         }
         return changed;
     }
@@ -497,9 +523,16 @@ public class Main {
         Map<String, String> body = body(exchange);
         String phone = last10(body.getOrDefault("phone", ""));
         Staff employee = staff.values().stream()
+                .filter(person -> "admin".equals(person.role))
                 .filter(person -> matchesLoginPhone(person, phone))
                 .findFirst()
                 .orElse(null);
+        if (employee == null) {
+            employee = staff.values().stream()
+                .filter(person -> matchesLoginPhone(person, phone))
+                .findFirst()
+                .orElse(null);
+        }
         if (employee == null) {
             sendJson(exchange, "{\"ok\":false,\"message\":\"Phone not registered\"}");
             return;
