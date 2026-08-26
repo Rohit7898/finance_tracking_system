@@ -21,6 +21,8 @@ if /I "%~1"=="uninstall" goto uninstall_task
 if /I "%~1"=="setup-java" goto setup_java
 if /I "%~1"=="stop" goto stop_server
 if /I "%~1"=="run" goto run_server
+if /I "%~1"=="menu" goto menu
+if "%~1"=="" goto run_server
 goto menu
 
 :menu
@@ -101,7 +103,12 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%OUT%" mkdir "%OUT%"
 
 call :ensure_java
-if errorlevel 1 exit /b 1
+if errorlevel 1 (
+    echo.
+    echo Backend setup needs attention. Opening menu...
+    pause
+    goto menu
+)
 
 echo.
 echo Compiling backend...
@@ -110,7 +117,7 @@ if errorlevel 1 (
     echo.
     echo Compile failed. Check src\Main.java.
     pause
-    exit /b 1
+    goto menu
 )
 
 echo.
