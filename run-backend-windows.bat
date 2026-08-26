@@ -9,6 +9,7 @@ set "PORT=8080"
 set "ROOT=%~dp0"
 set "SRC=%ROOT%src\Main.java"
 set "OUT=%ROOT%out"
+set "MAIN_CLASS=%OUT%\Main.class"
 set "LOG_DIR=%ROOT%logs"
 set "LOG_FILE=%LOG_DIR%\backend.log"
 set "RUNTIME_DIR=%ROOT%.runtime"
@@ -21,6 +22,7 @@ if /I "%~1"=="uninstall" goto uninstall_task
 if /I "%~1"=="setup-java" goto setup_java
 if /I "%~1"=="stop" goto stop_server
 if /I "%~1"=="status" goto status_server
+if /I "%~1"=="rebuild" goto rebuild_server
 if /I "%~1"=="run" goto run_server
 if /I "%~1"=="menu" goto menu
 if "%~1"=="" goto run_server
@@ -38,7 +40,8 @@ echo  3. Remove auto-start task
 echo  4. Setup/check portable Java 8 32-bit
 echo  5. Stop backend running on port %PORT%
 echo  6. Check backend status
-echo  7. Exit
+echo  7. Rebuild backend classes
+echo  8. Exit
 echo.
 set /p choice=Choose option: 
 if "%choice%"=="1" goto run_server
@@ -47,7 +50,8 @@ if "%choice%"=="3" goto uninstall_task
 if "%choice%"=="4" goto setup_java
 if "%choice%"=="5" goto stop_server
 if "%choice%"=="6" goto status_server
-if "%choice%"=="7" exit /b 0
+if "%choice%"=="7" goto rebuild_server
+if "%choice%"=="8" exit /b 0
 goto menu
 
 :setup_java
@@ -161,14 +165,16 @@ if errorlevel 1 (
     goto menu
 )
 
-echo.
-echo Compiling backend...
-"%JAVAC_EXE%" -source 8 -target 8 -d "%OUT%" "%SRC%"
-if errorlevel 1 (
-    echo.
-    echo Compile failed. Check src\Main.java.
-    pause
-    goto menu
+if not exist "%MAIN_CLASS%" (
+    call :compile_backend
+    if errorlevel 1 (
+        if exist "%MAIN_CLASS%" (
+            echo.
+            echo Compile failed, but existing backend classes are available. Starting existing backend.
+        ) else (
+            goto menu
+        )
+    )
 )
 
 echo.
@@ -189,6 +195,44 @@ echo [%date% %time%] Backend stopped. Restarting in 5 seconds...>> "%LOG_FILE%"
 echo Backend stopped. Restarting in 5 seconds...
 timeout /t 5 /nobreak >nul
 goto restart_loop
+
+:rebuild_server
+cd /d "%ROOT%"
+call :find_backend_pid
+if defined BACKEND_PID (
+    echo.
+    echo Backend is running on port %PORT%. Stop it before rebuilding.
+    echo Choose option 5, then option 7.
+    echo.
+    pause
+    goto menu
+)
+call :ensure_java
+if errorlevel 1 (
+    echo.
+    echo Backend setup needs attention.
+    pause
+    goto menu
+)
+call :compile_backend
+if errorlevel 1 goto menu
+echo.
+echo Backend classes rebuilt.
+pause
+goto menu
+
+:compile_backend
+if not exist "%OUT%" mkdir "%OUT%"
+echo.
+echo Compiling backend...
+"%JAVAC_EXE%" -source 8 -target 8 -d "%OUT%" "%SRC%"
+if errorlevel 1 (
+    echo.
+    echo Compile failed. If the file is being used by another process, choose option 5 to stop backend first.
+    pause
+    exit /b 1
+)
+exit /b 0
 
 :find_backend_pid
 set "BACKEND_PID="
