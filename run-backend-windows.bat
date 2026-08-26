@@ -86,13 +86,16 @@ exit /b 0
 :stop_server
 echo.
 echo Stopping backend process using port %PORT%...
-set "KILLED_BACKEND="
-for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
-    echo Killing process %%P
-    taskkill /PID %%P /F
-    set "KILLED_BACKEND=1"
+call :find_backend_pid
+if defined BACKEND_PID (
+    echo Killing process %BACKEND_PID%
+    taskkill /PID %BACKEND_PID% /F
+    echo Backend stop requested.
+    echo.
+    pause
+    goto menu
 )
-if not defined KILLED_BACKEND echo No backend process found on port %PORT%.
+echo No backend process found on port %PORT%.
 echo.
 pause
 goto menu
@@ -101,6 +104,18 @@ goto menu
 cd /d "%ROOT%"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 if not exist "%OUT%" mkdir "%OUT%"
+
+call :find_backend_pid
+if defined BACKEND_PID (
+    echo.
+    echo Backend is already running on port %PORT% with process %BACKEND_PID%.
+    echo Admin URL on this PC: http://localhost:%PORT%
+    echo Phone URL: http://192.168.x.x:%PORT%
+    echo.
+    echo No restart needed.
+    pause
+    exit /b 0
+)
 
 call :ensure_java
 if errorlevel 1 (
@@ -137,6 +152,13 @@ echo [%date% %time%] Backend stopped. Restarting in 5 seconds...>> "%LOG_FILE%"
 echo Backend stopped. Restarting in 5 seconds...
 timeout /t 5 /nobreak >nul
 goto restart_loop
+
+:find_backend_pid
+set "BACKEND_PID="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
+    set "BACKEND_PID=%%P"
+)
+exit /b 0
 
 :ensure_java
 echo.
