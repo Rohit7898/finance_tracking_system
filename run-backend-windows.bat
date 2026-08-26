@@ -41,7 +41,8 @@ echo  4. Setup/check portable Java 8 32-bit
 echo  5. Stop backend running on port %PORT%
 echo  6. Check backend status
 echo  7. Rebuild backend classes
-echo  8. Exit
+echo  8. Emergency stop all Java processes
+echo  9. Exit
 echo.
 set /p choice=Choose option: 
 if "%choice%"=="1" goto run_server
@@ -51,7 +52,8 @@ if "%choice%"=="4" goto setup_java
 if "%choice%"=="5" goto stop_server
 if "%choice%"=="6" goto status_server
 if "%choice%"=="7" goto rebuild_server
-if "%choice%"=="8" exit /b 0
+if "%choice%"=="8" goto stop_all_java
+if "%choice%"=="9" exit /b 0
 goto menu
 
 :setup_java
@@ -103,6 +105,17 @@ if defined BACKEND_PID (
     goto menu
 )
 echo No backend process found on port %PORT%.
+echo.
+pause
+goto menu
+
+:stop_all_java
+echo.
+echo Emergency stop: killing java.exe and javaw.exe.
+echo Use this only on the dedicated backend PC.
+taskkill /IM java.exe /F >nul 2>nul
+taskkill /IM javaw.exe /F >nul 2>nul
+echo Java processes stopped if any were running.
 echo.
 pause
 goto menu
@@ -301,9 +314,9 @@ set "JAVAC_EXE=%PORTABLE_JDK%\bin\javac.exe"
 exit /b 0
 
 :download_portable_java
-set "JAVA_ZIP=%TEMP%\portable-java8-32bit.zip"
+set "JAVA_ZIP=%TEMP%\portable-java8-32bit-%RANDOM%.zip"
 set "LOCAL_JAVA_ZIP=%ROOT%portable-java8-32bit.zip"
-set "BUNDLED_JAVA_ZIP=%TEMP%\finance-attendance-java8-win7-32bit.zip"
+set "BUNDLED_JAVA_ZIP=%TEMP%\finance-attendance-java8-win7-32bit-%RANDOM%.zip"
 set "JAVA_URL=https://cdn.azul.com/zulu/bin/zulu8.54.0.21-ca-jdk8.0.292-win_i686.zip"
 where powershell >nul 2>nul
 if errorlevel 1 (
@@ -347,11 +360,13 @@ if errorlevel 1 (
 )
 :extract_portable_java
 echo Extracting portable JDK...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp | Where-Object { $_.PSIsContainer } | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { Remove-Item -Recurse -Force '%PORTABLE_JDK%' }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk-temp-%RANDOM%'; if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }; New-Item -ItemType Directory -Force -Path $temp | Out-Null; $shell=New-Object -ComObject Shell.Application; $zip=$shell.NameSpace('%JAVA_ZIP%'); $dest=$shell.NameSpace($temp); if ($zip -eq $null -or $dest -eq $null) { exit 1 }; $dest.CopyHere($zip.Items(), 16); Start-Sleep -Seconds 10; $jdk=Get-ChildItem $temp | Where-Object { $_.PSIsContainer } | Select-Object -First 1; if ($jdk -eq $null) { exit 1 }; if (Test-Path '%PORTABLE_JDK%') { exit 2 }; Move-Item $jdk.FullName '%PORTABLE_JDK%'; Remove-Item -Recurse -Force $temp"
 if errorlevel 1 (
     echo.
     echo Could not extract portable Java.
-    echo If the backend is already running, choose option 5 to stop it and try again.
+    echo If Java is locked, choose option 8, then option 4.
+    echo You can also delete this folder manually after stopping Java:
+    echo %PORTABLE_JDK%
     exit /b 1
 )
 if not exist "%PORTABLE_JDK%\bin\javac.exe" (
