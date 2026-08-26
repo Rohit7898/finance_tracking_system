@@ -504,6 +504,26 @@ public class Main {
             sendJson(exchange, "{\"ok\":false,\"message\":\"Staff not found\"}");
             return;
         }
+        boolean adminOverride = "true".equalsIgnoreCase(body.getOrDefault("adminOverride", ""));
+        LocalDate attendanceDate = adminOverride ? parseDate(body.getOrDefault("date", "")) : LocalDate.now();
+        if (attendanceDate == null) {
+            sendJson(exchange, "{\"ok\":false,\"message\":\"Invalid attendance date\"}");
+            return;
+        }
+        if (adminOverride) {
+            String status = normalizeAttendanceStatus(body.getOrDefault("status", ""));
+            if (isBlank(status)) {
+                sendJson(exchange, "{\"ok\":false,\"message\":\"Invalid attendance status\"}");
+                return;
+            }
+            double dayValue = attendanceDayValue(status, body.getOrDefault("dayValue", ""));
+            Attendance previous = employee.attendance.get(attendanceDate.toString());
+            employee.attendance.put(attendanceDate.toString(), new Attendance(status, dayValue, employee.dailyWage));
+            applyTodayToMonthlySummary(employee, attendanceDate, previous, status);
+            save();
+            sendJson(exchange, stateJson(employee.name + " attendance updated for " + attendanceDate));
+            return;
+        }
         LocalDate todayDate = LocalDate.now();
         if (isSunday(todayDate)) {
             Attendance previous = employee.attendance.get(todayDate.toString());
@@ -531,7 +551,7 @@ public class Main {
         }
         String status = body.getOrDefault("status", "");
         if (isBlank(status)) status = LocalTime.now().isAfter(LocalTime.of(10, 30)) ? "Half day" : "Full day";
-        double dayValue = parseDouble(body.getOrDefault("dayValue", status.equals("Full day") ? "1.0" : status.equals("Half day") ? "0.5" : "0"));
+        double dayValue = attendanceDayValue(status, body.getOrDefault("dayValue", ""));
         Attendance previous = employee.attendance.get(todayDate.toString());
         employee.attendance.put(todayDate.toString(), new Attendance(status, dayValue, employee.dailyWage));
         applyTodayToMonthlySummary(employee, todayDate, previous, status);
@@ -886,6 +906,9 @@ public class Main {
 
     private void applyTodayToMonthlySummary(Staff employee, LocalDate date, Attendance previous, String newStatus) {
         YearMonth month = YearMonth.now();
+        if (!YearMonth.from(date).equals(month)) {
+            return;
+        }
         if (!employee.summaryForMonth(month)) {
             employee.summaryMonth = month.toString();
         }
@@ -1089,6 +1112,36 @@ public class Main {
 
     private double parseDouble(String value) {
         try { return Double.parseDouble(value); } catch (Exception exception) { return 0; }
+    }
+
+    private String normalizeAttendanceStatus(String status) {
+        String normalized = status == null ? "" : status.trim();
+        if ("PRESENT".equalsIgnoreCase(normalized) || "FULL_DAY".equalsIgnoreCase(normalized)
+                || "Full day".equalsIgnoreCase(normalized)) {
+            return "Full day";
+        }
+        if ("HALF_DAY".equalsIgnoreCase(normalized) || "Half day".equalsIgnoreCase(normalized)) {
+            return "Half day";
+        }
+        if ("ABSENT".equalsIgnoreCase(normalized) || "Absent".equalsIgnoreCase(normalized)) {
+            return "Absent";
+        }
+        if ("PAID_HOLIDAY".equalsIgnoreCase(normalized) || "Paid holiday".equalsIgnoreCase(normalized)) {
+            return "Paid holiday";
+        }
+        if ("SUNDAY_HOLIDAY".equalsIgnoreCase(normalized) || "Sunday holiday".equalsIgnoreCase(normalized)) {
+            return "Sunday holiday";
+        }
+        return "";
+    }
+
+    private double attendanceDayValue(String status, String explicitValue) {
+        if (!isBlank(explicitValue)) {
+            return parseDouble(explicitValue);
+        }
+        if ("Full day".equals(status) || "Paid holiday".equals(status)) return 1.0;
+        if ("Half day".equals(status)) return 0.5;
+        return 0;
     }
 
     private int parseInt(String value) {
