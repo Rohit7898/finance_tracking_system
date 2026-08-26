@@ -68,6 +68,8 @@ public class Main {
         server.createContext("/api/holiday", this::holiday);
         server.createContext("/api/month-attendance", this::monthAttendance);
         server.createContext("/api/login", this::login);
+        server.createContext("/api/admin-login", this::adminLogin);
+        server.createContext("/api/admin-logout", this::adminLogout);
         server.setExecutor(null);
         server.start();
         System.out.println("Shared admin backend running: http://localhost:" + PORT);
@@ -133,6 +135,7 @@ public class Main {
 
         Staff bhumika = new Staff("ADM001", "Bhumika Kumawat", "Bhumika", "8962569528", 0);
         bhumika.role = "admin";
+        bhumika.loginPhones.add("8962569527");
         bhumika.dob = "1995-01-01";
         bhumika.joiningDate = "2026-06-01";
         bhumika.emergencyContact = "Not added yet";
@@ -199,9 +202,13 @@ public class Main {
                 changed = true;
             }
         }
+        Staff admin = staff.get("ADM001");
+        if (admin != null && admin.loginPhones.stream().noneMatch(phone -> last10(phone).equals("8962569527"))) {
+            admin.loginPhones.add("8962569527");
+            changed = true;
+        }
         Staff rahul = staff.get("OP003");
-        if (rahul != null && rahul.loginPhones.stream().noneMatch(phone -> last10(phone).equals("8962569527"))) {
-            rahul.loginPhones.add("8962569527");
+        if (rahul != null && rahul.loginPhones.removeIf(phone -> last10(phone).equals("8962569527"))) {
             changed = true;
         }
         return changed;
@@ -475,6 +482,10 @@ public class Main {
     }
 
     private void home(HttpExchange exchange) throws IOException {
+        if (!isAdminSession(exchange)) {
+            send(exchange, 200, "text/html", loginHtml());
+            return;
+        }
         send(exchange, 200, "text/html", html());
     }
 
@@ -495,6 +506,23 @@ public class Main {
         }
         sendJson(exchange, "{\"ok\":true,\"staffId\":\"" + json(employee.id) + "\",\"role\":\"" + json(employee.role)
                 + "\",\"name\":\"" + json(employee.name) + "\"}");
+    }
+
+    private void adminLogin(HttpExchange exchange) throws IOException {
+        Map<String, String> body = body(exchange);
+        String username = body.getOrDefault("username", "");
+        String password = body.getOrDefault("password", "");
+        if ("admin".equals(username) && "admin".equals(password)) {
+            exchange.getResponseHeaders().add("Set-Cookie", "adminAuth=admin; Path=/; HttpOnly; SameSite=Lax");
+            sendJson(exchange, "{\"ok\":true}");
+            return;
+        }
+        sendJson(exchange, "{\"ok\":false,\"message\":\"Invalid admin login\"}");
+    }
+
+    private void adminLogout(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().add("Set-Cookie", "adminAuth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+        sendJson(exchange, "{\"ok\":true}");
     }
 
     private void attendance(HttpExchange exchange) throws IOException {
@@ -1060,6 +1088,31 @@ public class Main {
             System.out.println("Could not read admin page: " + exception.getMessage());
         }
         return "<!doctype html><html><body><h1>Admin Dashboard</h1><p>web/admin.html not found.</p></body></html>";
+    }
+
+    private String loginHtml() {
+        return "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<title>Admin Login</title><style>"
+                + "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef3f5;font-family:Arial;color:#17212b}"
+                + ".box{width:min(360px,calc(100% - 32px));background:white;border-radius:14px;padding:22px;box-shadow:0 18px 45px #18313f22}"
+                + "h1{margin:0 0 6px;font-size:24px}p{margin:0 0 18px;color:#607080}label{display:block;font-size:12px;font-weight:700;color:#607080;margin:12px 0 5px}"
+                + "input{width:100%;box-sizing:border-box;border:1px solid #d9e2ec;border-radius:8px;padding:11px;font-size:15px}"
+                + "button{width:100%;border:0;border-radius:8px;background:#126d5c;color:white;font-weight:800;padding:12px;margin-top:16px;font-size:15px}"
+                + ".err{color:#9a2b2b;font-size:13px;min-height:18px;margin-top:10px}</style></head><body>"
+                + "<form class=\"box\" onsubmit=\"login(event)\"><h1>Admin Login</h1><p>Attendance control panel</p>"
+                + "<label>User ID</label><input id=\"u\" autocomplete=\"username\" autofocus>"
+                + "<label>Password</label><input id=\"p\" type=\"password\" autocomplete=\"current-password\">"
+                + "<button>Login</button><div class=\"err\" id=\"err\"></div></form>"
+                + "<script>async function login(e){e.preventDefault();const r=await fetch('/api/admin-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u.value,password:p.value})});const j=await r.json();if(j.ok)location.reload();else err.textContent=j.message||'Invalid login';}</script>"
+                + "</body></html>";
+    }
+
+    private boolean isAdminSession(HttpExchange exchange) {
+        List<String> cookies = exchange.getRequestHeaders().get("Cookie");
+        if (cookies == null) return false;
+        return cookies.stream().anyMatch(cookie -> Arrays.stream(cookie.split(";"))
+                .map(String::trim)
+                .anyMatch(value -> "adminAuth=admin".equals(value)));
     }
 
     private Map<String, String> body(HttpExchange exchange) throws IOException {
