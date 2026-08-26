@@ -20,6 +20,7 @@ if /I "%~1"=="install" goto install_task
 if /I "%~1"=="uninstall" goto uninstall_task
 if /I "%~1"=="setup-java" goto setup_java
 if /I "%~1"=="stop" goto stop_server
+if /I "%~1"=="status" goto status_server
 if /I "%~1"=="run" goto run_server
 if /I "%~1"=="menu" goto menu
 if "%~1"=="" goto run_server
@@ -36,7 +37,8 @@ echo  2. Install auto-start task
 echo  3. Remove auto-start task
 echo  4. Setup/check portable Java 8 32-bit
 echo  5. Stop backend running on port %PORT%
-echo  6. Exit
+echo  6. Check backend status
+echo  7. Exit
 echo.
 set /p choice=Choose option: 
 if "%choice%"=="1" goto run_server
@@ -44,7 +46,8 @@ if "%choice%"=="2" goto install_task
 if "%choice%"=="3" goto uninstall_task
 if "%choice%"=="4" goto setup_java
 if "%choice%"=="5" goto stop_server
-if "%choice%"=="6" exit /b 0
+if "%choice%"=="6" goto status_server
+if "%choice%"=="7" exit /b 0
 goto menu
 
 :setup_java
@@ -100,6 +103,29 @@ echo.
 pause
 goto menu
 
+:status_server
+echo.
+call :find_backend_pid
+if not defined BACKEND_PID (
+    echo Backend is not listening on port %PORT%.
+    echo Run this batch file again to start it.
+    echo.
+    pause
+    goto menu
+)
+call :check_backend_health
+if "%BACKEND_HEALTHY%"=="1" (
+    echo Backend is running and responding on http://localhost:%PORT%/api/state
+    call :print_phone_urls
+) else (
+    echo Something is using port %PORT%, but the attendance backend is not responding.
+    echo Process ID: %BACKEND_PID%
+    echo Choose option 5 to stop it, then run this batch file again.
+)
+echo.
+pause
+goto menu
+
 :run_server
 cd /d "%ROOT%"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
@@ -107,10 +133,20 @@ if not exist "%OUT%" mkdir "%OUT%"
 
 call :find_backend_pid
 if defined BACKEND_PID (
+    call :check_backend_health
+    if not "%BACKEND_HEALTHY%"=="1" (
+        echo.
+        echo Port %PORT% is already used, but the attendance backend is not responding.
+        echo Process ID: %BACKEND_PID%
+        echo Choose option 5 to stop it, then run this batch file again.
+        echo.
+        pause
+        goto menu
+    )
     echo.
     echo Backend is already running on port %PORT% with process %BACKEND_PID%.
     echo Admin URL on this PC: http://localhost:%PORT%
-    echo Phone URL: http://192.168.x.x:%PORT%
+    call :print_phone_urls
     echo.
     echo No restart needed.
     pause
@@ -137,8 +173,9 @@ if errorlevel 1 (
 
 echo.
 echo Starting backend on port %PORT%.
+call :open_firewall_port
 echo Admin URL on this PC: http://localhost:%PORT%
-echo Phone URL: use this PC's Wi-Fi IPv4 address, for example http://192.168.x.x:%PORT%
+call :print_phone_urls
 echo.
 echo To find the IPv4 address, run: ipconfig
 echo To stop this runner, close this window or press Ctrl+C.
@@ -157,6 +194,26 @@ goto restart_loop
 set "BACKEND_PID="
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
     set "BACKEND_PID=%%P"
+)
+exit /b 0
+
+:check_backend_health
+set "BACKEND_HEALTHY="
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $wc=New-Object Net.WebClient; $wc.DownloadString('http://localhost:%PORT%/api/state') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>nul
+if not errorlevel 1 set "BACKEND_HEALTHY=1"
+exit /b 0
+
+:open_firewall_port
+netsh advfirewall firewall add rule name="%APP_NAME% Port %PORT%" dir=in action=allow protocol=TCP localport=%PORT% >nul 2>nul
+if errorlevel 1 (
+    netsh firewall add portopening TCP %PORT% "%APP_NAME% Port %PORT%" >nul 2>nul
+)
+exit /b 0
+
+:print_phone_urls
+echo Phone URLs on same Wi-Fi:
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /C:"IPv4 Address" /C:"IP Address"') do (
+    for /f "tokens=* delims= " %%B in ("%%A") do echo   http://%%B:%PORT%
 )
 exit /b 0
 
