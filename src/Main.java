@@ -753,6 +753,18 @@ public class Main {
             sendJson(exchange, "{\"ok\":false,\"message\":\"Sunday is already weekly holiday and not paid extra\"}");
             return;
         }
+        if ("remove".equalsIgnoreCase(body.getOrDefault("action", ""))) {
+            publicHolidays.remove(date.toString());
+            for (Staff employee : staff.values()) {
+                Attendance attendance = employee.attendance.get(date.toString());
+                if (attendance != null && "Paid holiday".equals(attendance.status)) {
+                    employee.attendance.remove(date.toString());
+                }
+            }
+            save();
+            sendJson(exchange, stateJson("Public holiday removed"));
+            return;
+        }
         publicHolidays.add(date.toString());
         for (Staff employee : staff.values()) {
             if ("employee".equals(employee.role) && !employee.attendance.containsKey(date.toString())) {
