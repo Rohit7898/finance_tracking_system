@@ -19,6 +19,7 @@ set "JAVAC_EXE=javac"
 if /I "%~1"=="install" goto install_task
 if /I "%~1"=="uninstall" goto uninstall_task
 if /I "%~1"=="setup-java" goto setup_java
+if /I "%~1"=="stop" goto stop_server
 if /I "%~1"=="run" goto run_server
 goto menu
 
@@ -32,14 +33,16 @@ echo  1. Run backend now
 echo  2. Install auto-start task
 echo  3. Remove auto-start task
 echo  4. Setup/check portable Java 8 32-bit
-echo  5. Exit
+echo  5. Stop backend running on port %PORT%
+echo  6. Exit
 echo.
 set /p choice=Choose option: 
 if "%choice%"=="1" goto run_server
 if "%choice%"=="2" goto install_task
 if "%choice%"=="3" goto uninstall_task
 if "%choice%"=="4" goto setup_java
-if "%choice%"=="5" exit /b 0
+if "%choice%"=="5" goto stop_server
+if "%choice%"=="6" exit /b 0
 goto menu
 
 :setup_java
@@ -77,6 +80,20 @@ schtasks /Delete /TN "%APP_NAME%" /F
 echo.
 pause
 exit /b 0
+
+:stop_server
+echo.
+echo Stopping backend process using port %PORT%...
+set "KILLED_BACKEND="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
+    echo Killing process %%P
+    taskkill /PID %%P /F
+    set "KILLED_BACKEND=1"
+)
+if not defined KILLED_BACKEND echo No backend process found on port %PORT%.
+echo.
+pause
+goto menu
 
 :run_server
 cd /d "%ROOT%"
@@ -156,6 +173,7 @@ exit /b 0
 :download_portable_java
 set "JAVA_ZIP=%TEMP%\portable-java8-32bit.zip"
 set "LOCAL_JAVA_ZIP=%ROOT%portable-java8-32bit.zip"
+set "BUNDLED_JAVA_ZIP=%TEMP%\finance-attendance-java8-win7-32bit.zip"
 set "JAVA_URL=https://cdn.azul.com/zulu/bin/zulu8.54.0.21-ca-jdk8.0.292-win_i686.zip"
 where powershell >nul 2>nul
 if errorlevel 1 (
@@ -167,14 +185,15 @@ if errorlevel 1 (
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
 if exist "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa" (
     echo Rebuilding bundled Java ZIP from repository parts...
-    if exist "%LOCAL_JAVA_ZIP%" del /f /q "%LOCAL_JAVA_ZIP%"
-    copy /b "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ab"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ac" "%LOCAL_JAVA_ZIP%" >nul
+    if exist "%BUNDLED_JAVA_ZIP%" del /f /q "%BUNDLED_JAVA_ZIP%"
+    copy /b "%ROOT%vendor\java\portable-java8-32bit.zip.part-aa"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ab"+"%ROOT%vendor\java\portable-java8-32bit.zip.part-ac" "%BUNDLED_JAVA_ZIP%" >nul
     if errorlevel 1 (
         echo.
         echo Could not rebuild bundled Java ZIP.
+        echo If the backend is already running, choose option 5 to stop it and try again.
         exit /b 1
     )
-    set "JAVA_ZIP=%LOCAL_JAVA_ZIP%"
+    set "JAVA_ZIP=%BUNDLED_JAVA_ZIP%"
     goto extract_portable_java
 )
 if exist "%LOCAL_JAVA_ZIP%" (
@@ -202,6 +221,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$temp='%RUNTIME_DIR%\jdk
 if errorlevel 1 (
     echo.
     echo Could not extract portable Java.
+    echo If the backend is already running, choose option 5 to stop it and try again.
     exit /b 1
 )
 if not exist "%PORTABLE_JDK%\bin\javac.exe" (
