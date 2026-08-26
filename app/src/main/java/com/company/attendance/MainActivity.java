@@ -979,6 +979,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams shopParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
         shopParams.setMargins(0, dp(10), 0, 0);
         card.addView(shopButton, shopParams);
+
+        Button logoutButton = profileActionButton("Logout", Color.rgb(154, 43, 43), v -> logout());
+        LinearLayout.LayoutParams logoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+        logoutParams.setMargins(0, dp(8), 0, 0);
+        card.addView(logoutButton, logoutParams);
         return card;
     }
 
@@ -1084,6 +1089,23 @@ public class MainActivity extends Activity {
                     render();
                 })
                 .show();
+    }
+
+    private void logout() {
+        stopAutoSync();
+        String loggedPhone = prefs.getString("loggedPhone", "");
+        SharedPreferences.Editor editor = prefs.edit()
+                .remove("loggedPhone")
+                .remove("loggedStaffId")
+                .remove("loggedRole")
+                .remove("loggedName");
+        if (!loggedPhone.isEmpty()) {
+            editor.remove("loginDevice:" + loggedPhone);
+        }
+        editor.apply();
+        selectedStaff = null;
+        activeTab = "dashboard";
+        showLogin();
     }
 
     @Override
