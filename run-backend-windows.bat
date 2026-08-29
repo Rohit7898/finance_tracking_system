@@ -178,15 +178,13 @@ if errorlevel 1 (
     goto menu
 )
 
-if not exist "%MAIN_CLASS%" (
-    call :compile_backend
-    if errorlevel 1 (
-        if exist "%MAIN_CLASS%" (
-            echo.
-            echo Compile failed, but existing backend classes are available. Starting existing backend.
-        ) else (
-            goto menu
-        )
+call :compile_backend
+if errorlevel 1 (
+    if exist "%MAIN_CLASS%" (
+        echo.
+        echo Compile failed, but existing backend classes are available. Starting existing backend.
+    ) else (
+        goto menu
     )
 )
 

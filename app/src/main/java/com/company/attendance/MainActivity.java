@@ -70,6 +70,8 @@ public class MainActivity extends Activity {
 
     private final Map<String, Staff> staffById = new LinkedHashMap<>();
     private final Map<String, AttendanceRecord> attendance = new LinkedHashMap<>();
+    private final List<String> publicHolidays = new ArrayList<>();
+    private final List<String> pendingRemovedHolidays = new ArrayList<>();
     private SharedPreferences prefs;
     private LinearLayout content;
     private LinearLayout tabBar;
@@ -549,7 +551,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, dp(8), 0, 0);
         card.setLayoutParams(params);
-        card.setOnClickListener(v -> showMonthCalendar(month));
+        card.setOnClickListener(v -> showMonthCalendar(selectedStaff, month));
 
         TextView title = text(month.month, 15, true);
         title.setTextColor(Color.rgb(31, 93, 143));
@@ -566,7 +568,7 @@ public class MainActivity extends Activity {
         return card;
     }
 
-    private void showMonthCalendar(MonthlyHistory month) {
+    private void showMonthCalendar(Staff staff, MonthlyHistory month) {
         YearMonth yearMonth;
         try {
             yearMonth = YearMonth.parse(month.month);
@@ -597,7 +599,7 @@ public class MainActivity extends Activity {
         }
         for (int day = 1; day <= daysInMonth; day++) {
             LocalDate date = yearMonth.atDay(day);
-            row.addView(calendarCell(date), new LinearLayout.LayoutParams(0, dp(62), 1));
+            row.addView(calendarCell(staff, date), new LinearLayout.LayoutParams(0, dp(62), 1));
             cell++;
             if (cell == 7) {
                 grid.addView(row);
@@ -633,8 +635,8 @@ public class MainActivity extends Activity {
         return view;
     }
 
-    private TextView calendarCell(LocalDate date) {
-        AttendanceRecord record = attendance.get(key(selectedStaff.id, date));
+    private TextView calendarCell(Staff staff, LocalDate date) {
+        AttendanceRecord record = attendance.get(key(staff.id, date));
         String status = record == null ? "" : displayStatus(record.status);
         String shortStatus = record == null ? "-" : shortStatus(record.status);
         TextView view = text(date.getDayOfMonth() + "\n" + shortStatus, 11, true);
@@ -691,6 +693,7 @@ public class MainActivity extends Activity {
         ));
 
         renderPendingLeaveTasks();
+        content.addView(publicHolidayCard());
 
         for (Staff staff : staffById.values()) {
             if (!isOperationStaff(staff)) continue;
@@ -789,11 +792,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(0, dp(12), 0, 0);
         card.setLayoutParams(params);
-        card.setOnClickListener(v -> {
-            selectedStaff = staff;
-            activeTab = "profile";
-            render();
-        });
+        card.setOnClickListener(v -> showAdminStaffDetails(staff));
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
@@ -828,38 +827,363 @@ public class MainActivity extends Activity {
         rowTwo.addView(metricBox("Leave", leaveText, Color.rgb(122, 77, 154)), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         card.addView(rowTwo, rowParams);
 
-        if (!staff.leaves.isEmpty()) {
-            card.addView(leaveTable(staff, true));
-        }
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button addAdvance = smallActionButton("+ Advance", Color.rgb(154, 43, 43));
-        addAdvance.setOnClickListener(v -> {
-            v.setPressed(false);
-            showAmountDialog("Add Advance", "Amount", amount -> {
-                staff.advanceBalance += amount;
-                toast("Advance added");
-                render();
-            });
-        });
-        Button repayment = smallActionButton("Repayment", Color.rgb(18, 109, 92));
-        repayment.setOnClickListener(v -> {
-            v.setPressed(false);
-            showAmountDialog("Apply Repayment", "Amount", amount -> {
-                staff.advanceBalance = Math.max(0, staff.advanceBalance - amount);
-                staff.lastAdvanceReturnDate = LocalDate.now();
-                toast("Repayment applied");
-                render();
-            });
-        });
-        actions.addView(addAdvance, new LinearLayout.LayoutParams(0, dp(44), 1));
-        actions.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
-        actions.addView(repayment, new LinearLayout.LayoutParams(0, dp(44), 1));
-        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        actionParams.setMargins(0, dp(10), 0, 0);
-        card.addView(actions, actionParams);
         return card;
+    }
+
+    private LinearLayout publicHolidayCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.setBackground(roundRect(Color.rgb(255, 244, 222), 8));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, 0);
+        card.setLayoutParams(params);
+
+        TextView title = text("Public Holidays", 15, true);
+        title.setTextColor(Color.rgb(138, 75, 18));
+        card.addView(title);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        EditText date = freeDateInput("Holiday date");
+        Button add = smallActionButton("Add", Color.rgb(31, 93, 143));
+        add.setOnClickListener(v -> {
+            String value = date.getText().toString().trim();
+            if (value.isEmpty()) {
+                toast("Select holiday date");
+                return;
+            }
+            postBackend("/api/holiday", "{\"date\":\"" + escape(value) + "\"}");
+            toast("Holiday saved");
+        });
+        row.addView(date, new LinearLayout.LayoutParams(0, dp(50), 1));
+        row.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
+        row.addView(add, new LinearLayout.LayoutParams(dp(84), dp(50)));
+        card.addView(row);
+
+        if (!publicHolidays.isEmpty()) {
+            for (String holiday : new ArrayList<>(publicHolidays)) {
+                if (pendingRemovedHolidays.contains(holiday)) continue;
+                LinearLayout chip = new LinearLayout(this);
+                chip.setOrientation(LinearLayout.HORIZONTAL);
+                chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                chip.setPadding(0, dp(6), 0, 0);
+                TextView label = text(holiday, 13, true);
+                label.setTextColor(Color.rgb(138, 75, 18));
+                Button remove = smallActionButton("Remove", Color.rgb(154, 43, 43));
+                remove.setOnClickListener(v -> {
+                    removePublicHoliday(holiday);
+                    toast("Holiday removed");
+                    render();
+                });
+                chip.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+                chip.addView(remove, new LinearLayout.LayoutParams(dp(96), dp(40)));
+                card.addView(chip);
+            }
+        }
+        return card;
+    }
+
+    private void removePublicHoliday(String holiday) {
+        publicHolidays.remove(holiday);
+        if (!pendingRemovedHolidays.contains(holiday)) pendingRemovedHolidays.add(holiday);
+        postBackend("/api/holiday", "{\"date\":\"" + escape(holiday) + "\",\"action\":\"remove\"}");
+    }
+
+    private void showAdminStaffDetails(Staff staff) {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+        wrapper.setPadding(dp(14), dp(8), dp(14), 0);
+        scroll.addView(wrapper);
+
+        wrapper.addView(adminProfileSummary(staff));
+        wrapper.addView(adminStaffMetrics(staff));
+        wrapper.addView(adminMoneyCard(staff));
+        wrapper.addView(adminManualAttendanceCard(staff));
+        wrapper.addView(adminMonthAttendanceCard(staff));
+        wrapper.addView(adminSalaryTable(staff));
+        wrapper.addView(adminAdvanceTable(staff));
+        wrapper.addView(leaveTable(staff, true));
+        wrapper.addView(adminHistoryTable(staff));
+
+        new AlertDialog.Builder(this)
+                .setTitle(staff.name)
+                .setView(scroll)
+                .setPositiveButton("Close", null)
+                .show();
+    }
+
+    private LinearLayout adminProfileSummary(Staff staff) {
+        LinearLayout card = adminSectionCard();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.addView(employeeAvatar(staff, dp(62)), new LinearLayout.LayoutParams(dp(62), dp(62)));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(12), 0, 0, 0);
+        TextView name = text(staff.name, 18, true);
+        name.setTextColor(Color.rgb(39, 51, 64));
+        TextView status = text(displayStatus(todayStatus(staff.id)) + " | Rs " + money(staff.dailyWage) + "/day", 13, true);
+        status.setTextColor(statusColor(todayStatus(staff.id)));
+        copy.addView(name);
+        copy.addView(status);
+        row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button edit = iconOnlyButton(R.drawable.ic_admin, Color.rgb(31, 93, 143));
+        edit.setOnClickListener(v -> showAdminEditProfileDialog(staff));
+        row.addView(edit, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        card.addView(row);
+        return card;
+    }
+
+    private LinearLayout adminStaffMetrics(Staff staff) {
+        double monthDays = staff.serverMonthDays >= 0 ? staff.serverMonthDays
+                : attendanceDays(staff.id, LocalDate.now().withDayOfMonth(1), LocalDate.now());
+        double earned = staff.serverEarned >= 0 ? staff.serverEarned : monthDays * staff.dailyWage;
+        double remaining = staff.serverRemaining >= 0 ? staff.serverRemaining : earned;
+        return metricCard(
+                R.drawable.ic_salary,
+                Color.rgb(18, 109, 92),
+                Color.rgb(232, 246, 242),
+                "Staff Snapshot",
+                new String[][]{
+                        {"Day rate", "Rs " + money(staff.dailyWage)},
+                        {"Today", displayStatus(todayStatus(staff.id))},
+                        {"Month days", money(monthDays)},
+                        {"F/H/A", staff.fullDays + "/" + staff.halfDays + "/" + staff.absentDays},
+                        {"Remaining", "Rs " + money(remaining)},
+                        {"Advance", "Rs " + money(staff.advanceBalance)},
+                        {"Last paid", "Rs " + money(staff.lastSalaryAmount)},
+                        {"Paid date", dateText(staff.lastSalaryDate)}
+                }
+        );
+    }
+
+    private void showAdminEditProfileDialog(Staff staff) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(8), dp(16), 0);
+        EditText name = adminTextInput("Full name");
+        name.setSingleLine(true);
+        name.setText(staff.name);
+        EditText phone = adminTextInput("Phone");
+        phone.setSingleLine(true);
+        phone.setText(staff.phone == null ? "" : staff.phone);
+        EditText emergency = adminTextInput("Emergency contact");
+        emergency.setSingleLine(true);
+        emergency.setText(staff.emergencyContact == null ? "" : staff.emergencyContact);
+        EditText dob = adminDateInput("Date of birth");
+        dob.setText(dateText(staff.dateOfBirth));
+        EditText joining = adminDateInput("Date of joining");
+        joining.setText(dateText(staff.dateOfJoining));
+        card.addView(labeledField("Full name", name));
+        card.addView(labeledField("Phone", phone));
+        card.addView(labeledField("Emergency contact", emergency));
+        card.addView(labeledField("Date of birth", dob));
+        card.addView(labeledField("Date of joining", joining));
+        new AlertDialog.Builder(this)
+                .setTitle("Edit profile")
+                .setView(card)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    staff.name = name.getText().toString().trim();
+                    staff.phone = phone.getText().toString().trim();
+                    staff.emergencyContact = emergency.getText().toString().trim();
+                    staff.dateOfBirth = parseLocalDate(dob.getText().toString().trim(), staff.dateOfBirth);
+                    staff.dateOfJoining = parseLocalDate(joining.getText().toString().trim(), staff.dateOfJoining);
+                    postBackend("/api/staff", "{\"staffId\":\"" + staff.id
+                            + "\",\"name\":\"" + escape(staff.name)
+                            + "\",\"phone\":\"" + escape(staff.phone)
+                            + "\",\"emergencyContact\":\"" + escape(staff.emergencyContact)
+                            + "\",\"dob\":\"" + escape(dob.getText().toString().trim())
+                            + "\",\"joiningDate\":\"" + escape(joining.getText().toString().trim()) + "\"}");
+                    toast("Profile saved");
+                })
+                .show();
+    }
+
+    private LinearLayout adminMoneyCard(Staff staff) {
+        LinearLayout card = adminSectionCard();
+        card.addView(sectionHeader(R.drawable.ic_salary, "Salary & Advance", Color.rgb(18, 109, 92)));
+        LinearLayout rowOne = new LinearLayout(this);
+        rowOne.setOrientation(LinearLayout.HORIZONTAL);
+        Button salaryPaid = actionTile(R.drawable.ic_salary, "Pay", Color.rgb(18, 109, 92));
+        salaryPaid.setOnClickListener(v -> showAmountDialog("Salary Paid", "Amount", amount -> {
+            postBackend("/api/salary-payment", "{\"staffId\":\"" + staff.id + "\",\"amount\":\"" + money(amount) + "\"}");
+            toast("Salary payment saved");
+        }));
+        Button wage = actionTile(R.drawable.ic_salary, "Salary/day", Color.rgb(31, 93, 143));
+        wage.setOnClickListener(v -> showAmountDialog("Salary Per Day", "Amount", amount -> {
+            staff.dailyWage = amount;
+            postBackend("/api/daily-wage", "{\"staffId\":\"" + staff.id + "\",\"amount\":\"" + money(amount) + "\"}");
+            toast("Daily salary updated");
+        }));
+        rowOne.addView(salaryPaid, new LinearLayout.LayoutParams(0, dp(44), 1));
+        rowOne.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
+        rowOne.addView(wage, new LinearLayout.LayoutParams(0, dp(44), 1));
+        card.addView(rowOne);
+
+        LinearLayout rowTwo = new LinearLayout(this);
+        rowTwo.setOrientation(LinearLayout.HORIZONTAL);
+        Button advance = actionTile(R.drawable.ic_advance, "+ Advance", Color.rgb(154, 43, 43));
+        advance.setOnClickListener(v -> showAmountDialog("Add Advance", "Amount", amount -> {
+            postBackend("/api/advance", "{\"staffId\":\"" + staff.id + "\",\"amount\":\"" + money(amount) + "\"}");
+            toast("Advance added");
+        }));
+        Button repayment = actionTile(R.drawable.ic_advance, "Repay", Color.rgb(18, 109, 92));
+        repayment.setOnClickListener(v -> showAmountDialog("Apply Repayment", "Amount", amount -> {
+            postBackend("/api/repayment", "{\"staffId\":\"" + staff.id + "\",\"amount\":\"" + money(amount) + "\"}");
+            toast("Repayment saved");
+        }));
+        rowTwo.addView(advance, new LinearLayout.LayoutParams(0, dp(44), 1));
+        rowTwo.addView(new TextView(this), new LinearLayout.LayoutParams(dp(8), 1));
+        rowTwo.addView(repayment, new LinearLayout.LayoutParams(0, dp(44), 1));
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        secondParams.setMargins(0, dp(8), 0, 0);
+        card.addView(rowTwo, secondParams);
+        return card;
+    }
+
+    private LinearLayout adminManualAttendanceCard(Staff staff) {
+        LinearLayout card = adminSectionCard();
+        card.addView(sectionHeader(R.drawable.ic_attendance, "Manual Attendance", Color.rgb(31, 93, 143)));
+        EditText date = adminDateInput("Date");
+        date.setText(LocalDate.now().toString());
+        Spinner status = new Spinner(this);
+        String[] options = {"Full day", "Half day", "Absent", "Paid holiday"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, options);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        status.setAdapter(adapter);
+        status.setBackground(borderedRoundRect(Color.rgb(248, 250, 252), Color.rgb(196, 207, 219), 8));
+        status.setPadding(dp(8), 0, dp(8), 0);
+        Button apply = primaryButton("Apply attendance", Color.rgb(31, 93, 143));
+        apply.setOnClickListener(v -> {
+            String selected = status.getSelectedItem().toString();
+            postBackend("/api/attendance", "{\"staffId\":\"" + staff.id
+                    + "\",\"date\":\"" + escape(date.getText().toString().trim())
+                    + "\",\"status\":\"" + escape(selected)
+                    + "\",\"adminOverride\":\"true\"}");
+            toast("Attendance updated");
+        });
+        card.addView(labeledField("Date", date));
+        card.addView(labeledField("Status", status));
+        card.addView(apply);
+        return card;
+    }
+
+    private LinearLayout adminMonthAttendanceCard(Staff staff) {
+        LinearLayout card = adminSectionCard();
+        card.addView(sectionHeader(R.drawable.ic_dashboard, "Current Month Totals", Color.rgb(122, 77, 154)));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        EditText full = numberInput("Full");
+        full.setText(String.valueOf(staff.fullDays));
+        EditText half = numberInput("Half");
+        half.setText(String.valueOf(staff.halfDays));
+        EditText absent = numberInput("Absent");
+        absent.setText(String.valueOf(staff.absentDays));
+        row.addView(full, new LinearLayout.LayoutParams(0, dp(50), 1));
+        row.addView(new TextView(this), new LinearLayout.LayoutParams(dp(6), 1));
+        row.addView(half, new LinearLayout.LayoutParams(0, dp(50), 1));
+        row.addView(new TextView(this), new LinearLayout.LayoutParams(dp(6), 1));
+        row.addView(absent, new LinearLayout.LayoutParams(0, dp(50), 1));
+        card.addView(row);
+        Button save = primaryButton("Update totals", Color.rgb(18, 109, 92));
+        save.setOnClickListener(v -> {
+            postBackend("/api/month-attendance", "{\"staffId\":\"" + staff.id
+                    + "\",\"fullDays\":\"" + escape(full.getText().toString().trim())
+                    + "\",\"halfDays\":\"" + escape(half.getText().toString().trim())
+                    + "\",\"absentDays\":\"" + escape(absent.getText().toString().trim()) + "\"}");
+            toast("Month totals saved");
+        });
+        card.addView(save);
+        return card;
+    }
+
+    private LinearLayout adminAttendanceTable(Staff staff) {
+        LinearLayout table = adminSectionCard();
+        table.addView(sectionHeader(R.drawable.ic_attendance, "Current Month Attendance", Color.rgb(31, 93, 143)));
+        table.addView(attendanceHeader());
+        YearMonth month = YearMonth.now();
+        for (AttendanceRecord record : attendance.values()) {
+            if (!record.staffId.equals(staff.id) || !YearMonth.from(record.date).equals(month)) continue;
+            table.addView(attendanceRow(record));
+        }
+        return table;
+    }
+
+    private LinearLayout attendanceHeader() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(6), dp(7), dp(6), dp(7));
+        row.setBackground(roundRect(Color.rgb(244, 247, 250), 6));
+        row.addView(tableCell("Date", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell("Status", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell("Days", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        return row;
+    }
+
+    private LinearLayout attendanceRow(AttendanceRecord record) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(6), dp(9), dp(6), dp(9));
+        row.addView(tableCell(record.date.toString(), false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell(displayStatus(record.status), false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell(money(record.dayValue), true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        return row;
+    }
+
+    private LinearLayout adminSalaryTable(Staff staff) {
+        LinearLayout table = adminSectionCard();
+        table.addView(sectionHeader(R.drawable.ic_salary, "Salary Ledger", Color.rgb(18, 109, 92)));
+        table.addView(twoColumnHeader("Date", "Amount"));
+        if (staff.salaryLogs.isEmpty()) table.addView(emptySmall("No salary rows"));
+        for (SalaryLog log : staff.salaryLogs) {
+            table.addView(twoColumnRow(log.date, "Rs " + money(log.amount)));
+        }
+        return table;
+    }
+
+    private LinearLayout adminAdvanceTable(Staff staff) {
+        LinearLayout table = adminSectionCard();
+        table.addView(sectionHeader(R.drawable.ic_advance, "Advance Ledger", Color.rgb(154, 43, 43)));
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setPadding(dp(6), dp(7), dp(6), dp(7));
+        header.setBackground(roundRect(Color.rgb(244, 247, 250), 6));
+        header.addView(tableCell("Date", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(tableCell("Action", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(tableCell("Amount", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(tableCell("Balance", true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        table.addView(header);
+        if (staff.advanceLogs.isEmpty()) table.addView(emptySmall("No advance rows"));
+        for (AdvanceLog log : staff.advanceLogs) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(dp(6), dp(9), dp(6), dp(9));
+            row.addView(tableCell(log.date, false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            row.addView(tableCell(log.type, false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            row.addView(tableCell("Rs " + money(log.amount), false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            row.addView(tableCell("Rs " + money(log.balance), true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            table.addView(row);
+        }
+        return table;
+    }
+
+    private LinearLayout adminHistoryTable(Staff staff) {
+        LinearLayout table = adminSectionCard();
+        table.addView(sectionHeader(R.drawable.ic_salary, "History", Color.rgb(31, 93, 143)));
+        if (staff.history.isEmpty()) {
+            table.addView(emptySmall("No history rows"));
+            return table;
+        }
+        for (MonthlyHistory month : staff.history) {
+            LinearLayout row = twoColumnRow(month.month, "Days " + money(month.days) + " | Paid Rs " + money(month.paid));
+            row.setOnClickListener(v -> showMonthCalendar(staff, month));
+            table.addView(row);
+        }
+        return table;
     }
 
     private void markPresent() {
@@ -1322,6 +1646,146 @@ public class MainActivity extends Activity {
         return cell;
     }
 
+    private LinearLayout adminSectionCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        card.setBackground(borderedRoundRect(Color.WHITE, Color.rgb(226, 232, 240), 8));
+        card.setElevation(dp(1));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, 0);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private LinearLayout sectionHeader(int iconRes, String value, int color) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        header.setPadding(0, 0, 0, dp(10));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(color);
+        icon.setBackground(roundRect(lightTone(color), 8));
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
+        header.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
+
+        TextView title = text(value, 15, true);
+        title.setTextColor(color);
+        title.setPadding(dp(9), 0, 0, 0);
+        header.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        return header;
+    }
+
+    private TextView sectionTitle(String value) {
+        TextView title = text(value, 15, true);
+        title.setTextColor(Color.rgb(31, 93, 143));
+        title.setPadding(0, 0, 0, dp(8));
+        return title;
+    }
+
+    private TextView emptySmall(String value) {
+        TextView empty = text(value, 13, false);
+        empty.setTextColor(Color.rgb(94, 110, 126));
+        empty.setPadding(dp(4), dp(8), dp(4), 0);
+        return empty;
+    }
+
+    private LinearLayout twoColumnHeader(String left, String right) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(6), dp(7), dp(6), dp(7));
+        row.setBackground(roundRect(Color.rgb(244, 247, 250), 6));
+        row.addView(tableCell(left, true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell(right, true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        return row;
+    }
+
+    private LinearLayout twoColumnRow(String left, String right) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(6), dp(9), dp(6), dp(9));
+        row.addView(tableCell(left, false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(tableCell(right, true), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        return row;
+    }
+
+    private EditText numberInput(String hint) {
+        EditText editText = new EditText(this);
+        editText.setHint(hint);
+        editText.setTextSize(14);
+        editText.setSingleLine(true);
+        editText.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        editText.setPadding(dp(10), 0, dp(10), 0);
+        editText.setBackground(borderedRoundRect(Color.rgb(248, 250, 252), Color.rgb(196, 207, 219), 8));
+        return editText;
+    }
+
+    private LinearLayout labeledField(String label, View field) {
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, dp(8), 0, 0);
+        wrapper.setLayoutParams(params);
+
+        TextView labelView = text(label, 11, true);
+        labelView.setTextColor(Color.rgb(94, 110, 126));
+        labelView.setPadding(dp(2), 0, 0, dp(4));
+        wrapper.addView(labelView);
+        wrapper.addView(field, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+        return wrapper;
+    }
+
+    private EditText adminTextInput(String hint) {
+        EditText editText = new EditText(this);
+        editText.setHint(hint);
+        editText.setTextSize(14);
+        editText.setSingleLine(true);
+        editText.setPadding(dp(12), 0, dp(12), 0);
+        editText.setBackground(borderedRoundRect(Color.rgb(248, 250, 252), Color.rgb(196, 207, 219), 8));
+        return editText;
+    }
+
+    private EditText adminDateInput(String hint) {
+        EditText editText = adminTextInput(hint);
+        editText.setInputType(InputType.TYPE_NULL);
+        editText.setFocusable(false);
+        editText.setOnClickListener(v -> showFreeDatePicker(editText));
+        return editText;
+    }
+
+    private Button actionTile(int iconRes, String label, int color) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextColor(color);
+        button.setTextSize(13);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0);
+        button.setCompoundDrawablePadding(dp(6));
+        button.setBackground(borderedRoundRect(lightTone(color), color, 8));
+        button.setPadding(dp(8), 0, dp(8), 0);
+        return button;
+    }
+
+    private Button iconOnlyButton(int iconRes, int color) {
+        Button button = new Button(this);
+        button.setText("");
+        button.setAllCaps(false);
+        button.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0);
+        button.setBackground(borderedRoundRect(lightTone(color), color, 8));
+        button.setPadding(dp(10), 0, dp(10), 0);
+        return button;
+    }
+
+    private int lightTone(int color) {
+        if (color == Color.rgb(154, 43, 43)) return Color.rgb(255, 235, 235);
+        if (color == Color.rgb(18, 109, 92)) return Color.rgb(232, 246, 242);
+        if (color == Color.rgb(122, 77, 154)) return Color.rgb(246, 238, 250);
+        return Color.rgb(232, 241, 249);
+    }
+
     private int statusTextColor(String status) {
         if ("Approved".equals(status)) return Color.rgb(18, 109, 92);
         if ("Rejected".equals(status)) return Color.rgb(154, 43, 43);
@@ -1347,6 +1811,29 @@ public class MainActivity extends Activity {
         editText.setFocusable(false);
         editText.setOnClickListener(v -> showDatePicker(editText));
         return editText;
+    }
+
+    private EditText freeDateInput(String hint) {
+        EditText editText = input(hint);
+        editText.setInputType(InputType.TYPE_NULL);
+        editText.setFocusable(false);
+        editText.setOnClickListener(v -> showFreeDatePicker(editText));
+        return editText;
+    }
+
+    private void showFreeDatePicker(EditText target) {
+        LocalDate current = parseLocalDate(target.getText().toString(), LocalDate.now());
+        DatePicker picker = new DatePicker(this);
+        final AlertDialog[] dialog = new AlertDialog[1];
+        dialog[0] = new AlertDialog.Builder(this)
+                .setView(picker)
+                .setNegativeButton("Cancel", null)
+                .create();
+        picker.init(current.getYear(), current.getMonthValue() - 1, current.getDayOfMonth(), (view, year, monthOfYear, dayOfMonth) -> {
+            target.setText(LocalDate.of(year, monthOfYear + 1, dayOfMonth).toString());
+            dialog[0].dismiss();
+        });
+        dialog[0].show();
     }
 
     private void showDatePicker(EditText target) {
@@ -1707,7 +2194,32 @@ public class MainActivity extends Activity {
                 }
                 connection.disconnect();
 
-                JSONArray staffList = new JSONObject(response).getJSONArray("staff");
+                JSONObject state = new JSONObject(response);
+                JSONArray holidays = state.optJSONArray("publicHolidays");
+                if (holidays != null) {
+                    List<String> updatedHolidays = new ArrayList<>();
+                    for (int i = 0; i < holidays.length(); i++) {
+                        String holiday = holidays.optString(i, "");
+                        if (!pendingRemovedHolidays.contains(holiday)) updatedHolidays.add(holiday);
+                    }
+                    for (String pending : new ArrayList<>(pendingRemovedHolidays)) {
+                        boolean backendStillHasHoliday = false;
+                        for (int i = 0; i < holidays.length(); i++) {
+                            if (pending.equals(holidays.optString(i, ""))) {
+                                backendStillHasHoliday = true;
+                                break;
+                            }
+                        }
+                        if (!backendStillHasHoliday) pendingRemovedHolidays.remove(pending);
+                    }
+                    if (!publicHolidays.equals(updatedHolidays)) {
+                        publicHolidays.clear();
+                        publicHolidays.addAll(updatedHolidays);
+                        changed = true;
+                    }
+                }
+
+                JSONArray staffList = state.getJSONArray("staff");
                 for (int i = 0; i < staffList.length(); i++) {
                     JSONObject object = staffList.getJSONObject(i);
                     String id = object.optString("id", "");
@@ -1723,6 +2235,8 @@ public class MainActivity extends Activity {
                         changed = true;
                     }
                     String phone = object.optString("phone", staff.phone);
+                    String name = object.optString("name", staff.name);
+                    String nickname = object.optString("nickname", staff.nickname);
                     String loggedStaffId = prefs.getString("loggedStaffId", "");
                     String loggedPhone = prefs.getString("loggedPhone", "");
                     if (staff.id.equals(loggedStaffId) && !loggedPhone.isEmpty()) {
@@ -1737,7 +2251,23 @@ public class MainActivity extends Activity {
                     double monthDays = object.optDouble("monthDays", staff.serverMonthDays);
                     double earned = object.optDouble("earned", staff.serverEarned);
                     double remaining = object.optDouble("remaining", staff.serverRemaining);
+                    int fullDays = object.optInt("fullDays", staff.fullDays);
+                    int halfDays = object.optInt("halfDays", staff.halfDays);
+                    int absentDays = object.optInt("absentDays", staff.absentDays);
                     String lastRepayment = object.optString("lastRepayment", "");
+                    String lastSalaryDate = object.optString("lastSalaryDate", "");
+                    if (fullDays != staff.fullDays) {
+                        staff.fullDays = fullDays;
+                        changed = true;
+                    }
+                    if (halfDays != staff.halfDays) {
+                        staff.halfDays = halfDays;
+                        changed = true;
+                    }
+                    if (absentDays != staff.absentDays) {
+                        staff.absentDays = absentDays;
+                        changed = true;
+                    }
                     if (Math.abs(staff.serverMonthDays - monthDays) > 0.01) {
                         staff.serverMonthDays = monthDays;
                         changed = true;
@@ -1752,6 +2282,14 @@ public class MainActivity extends Activity {
                     }
                     if (phone != null && !phone.equals(staff.phone)) {
                         staff.phone = phone;
+                        changed = true;
+                    }
+                    if (name != null && !name.equals(staff.name)) {
+                        staff.name = name;
+                        changed = true;
+                    }
+                    if (nickname != null && !nickname.equals(staff.nickname)) {
+                        staff.nickname = nickname;
                         changed = true;
                     }
                     if (!dob.isEmpty()) {
@@ -1784,6 +2322,13 @@ public class MainActivity extends Activity {
                         staff.lastSalaryAmount = paid;
                         changed = true;
                     }
+                    if (!lastSalaryDate.isEmpty()) {
+                        LocalDate salaryDate = LocalDate.parse(lastSalaryDate);
+                        if (staff.lastSalaryDate == null || !staff.lastSalaryDate.equals(salaryDate)) {
+                            staff.lastSalaryDate = salaryDate;
+                            changed = true;
+                        }
+                    }
                     if (!lastRepayment.isEmpty()) {
                         LocalDate repaymentDate = LocalDate.parse(lastRepayment);
                         if (staff.lastAdvanceReturnDate == null || !staff.lastAdvanceReturnDate.equals(repaymentDate)) {
@@ -1812,6 +2357,14 @@ public class MainActivity extends Activity {
                     }
                     JSONArray attendanceRows = object.optJSONArray("attendanceRows");
                     if (attendanceRows != null && replaceAttendanceRows(staff, attendanceRows)) {
+                        changed = true;
+                    }
+                    JSONArray salaryLogs = object.optJSONArray("salaryLogs");
+                    if (salaryLogs != null && replaceSalaryLogs(staff, salaryLogs)) {
+                        changed = true;
+                    }
+                    JSONArray advanceLogs = object.optJSONArray("advanceLogs");
+                    if (advanceLogs != null && replaceAdvanceLogs(staff, advanceLogs)) {
                         changed = true;
                     }
                     JSONArray history = object.optJSONArray("history");
@@ -1942,6 +2495,54 @@ public class MainActivity extends Activity {
             }
         }
         return changed;
+    }
+
+    private boolean replaceSalaryLogs(Staff staff, JSONArray rows) throws Exception {
+        List<SalaryLog> updated = new ArrayList<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            updated.add(new SalaryLog(row.optString("date", ""), row.optDouble("amount", 0)));
+        }
+        if (sameSalaryLogs(staff.salaryLogs, updated)) return false;
+        staff.salaryLogs.clear();
+        staff.salaryLogs.addAll(updated);
+        return true;
+    }
+
+    private boolean sameSalaryLogs(List<SalaryLog> current, List<SalaryLog> updated) {
+        if (current.size() != updated.size()) return false;
+        for (int i = 0; i < current.size(); i++) {
+            SalaryLog a = current.get(i);
+            SalaryLog b = updated.get(i);
+            if (!a.date.equals(b.date) || Math.abs(a.amount - b.amount) > 0.01) return false;
+        }
+        return true;
+    }
+
+    private boolean replaceAdvanceLogs(Staff staff, JSONArray rows) throws Exception {
+        List<AdvanceLog> updated = new ArrayList<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            updated.add(new AdvanceLog(row.optString("date", ""), row.optString("type", ""),
+                    row.optDouble("amount", 0), row.optDouble("balance", 0)));
+        }
+        if (sameAdvanceLogs(staff.advanceLogs, updated)) return false;
+        staff.advanceLogs.clear();
+        staff.advanceLogs.addAll(updated);
+        return true;
+    }
+
+    private boolean sameAdvanceLogs(List<AdvanceLog> current, List<AdvanceLog> updated) {
+        if (current.size() != updated.size()) return false;
+        for (int i = 0; i < current.size(); i++) {
+            AdvanceLog a = current.get(i);
+            AdvanceLog b = updated.get(i);
+            if (!a.date.equals(b.date) || !a.type.equals(b.type)
+                    || Math.abs(a.amount - b.amount) > 0.01 || Math.abs(a.balance - b.balance) > 0.01) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean sameHistory(List<MonthlyHistory> current, List<MonthlyHistory> updated) {
@@ -2332,6 +2933,14 @@ public class MainActivity extends Activity {
         return date == null ? "No repayment yet" : date.toString();
     }
 
+    private String dateText(LocalDate date) {
+        return date == null ? "" : date.toString();
+    }
+
+    private String safeText(String value) {
+        return value == null || value.trim().isEmpty() ? "Not added" : value.trim();
+    }
+
     private String money(double value) {
         return String.format("%.2f", value);
     }
@@ -2415,9 +3024,15 @@ public class MainActivity extends Activity {
         return drawable;
     }
 
+    private GradientDrawable borderedRoundRect(int color, int strokeColor, int radiusDp) {
+        GradientDrawable drawable = roundRect(color, radiusDp);
+        drawable.setStroke(dp(1), strokeColor);
+        return drawable;
+    }
+
     static class Staff {
         final String id;
-        final String name;
+        String name;
         double dailyWage;
         String nickname;
         LocalDate dateOfBirth;
@@ -2432,13 +3047,42 @@ public class MainActivity extends Activity {
         double serverMonthDays = -1;
         double serverEarned = -1;
         double serverRemaining = -1;
+        int fullDays;
+        int halfDays;
+        int absentDays;
         final List<LeaveRequest> leaves = new ArrayList<>();
         final List<MonthlyHistory> history = new ArrayList<>();
+        final List<SalaryLog> salaryLogs = new ArrayList<>();
+        final List<AdvanceLog> advanceLogs = new ArrayList<>();
 
         Staff(String id, String name, double dailyWage) {
             this.id = id;
             this.name = name;
             this.dailyWage = dailyWage;
+        }
+    }
+
+    static class SalaryLog {
+        final String date;
+        final double amount;
+
+        SalaryLog(String date, double amount) {
+            this.date = date;
+            this.amount = amount;
+        }
+    }
+
+    static class AdvanceLog {
+        final String date;
+        final String type;
+        final double amount;
+        final double balance;
+
+        AdvanceLog(String date, String type, double amount, double balance) {
+            this.date = date;
+            this.type = type;
+            this.amount = amount;
+            this.balance = balance;
         }
     }
 
